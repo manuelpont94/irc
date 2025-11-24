@@ -1,0 +1,13 @@
+[package]
+name = "irc_server"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "irc_server"
+
+[dependencies]
+nom = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
