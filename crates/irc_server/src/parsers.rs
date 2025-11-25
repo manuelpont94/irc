@@ -140,10 +140,10 @@ pub fn host_parser(input: &str) -> IResult<&str, &str> {
 // 06.  hostname   =  shortname *( "." shortname )
 // hostname = shortname *( "." shortname )
 pub fn hostname_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize((
+    let mut parser = verify(recognize((
         shortname_parser,
         many0(preceded(tag("."), shortname_parser)),
-    ));
+    )), |s:&str| s.len()<=63) ;
     parser.parse(input)
 }
 
