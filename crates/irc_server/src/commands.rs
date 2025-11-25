@@ -1,24 +1,26 @@
+use std::path::PrefixComponent;
+
 use nom::{
     IResult, Parser,
     branch::alt,
-    bytes::complete::{tag, take_till, take_while1},
+    bytes::complete::{tag, tag_no_case, take_till, take_while1},
     character::complete::{char, line_ending, space1},
-    combinator::{recognize, verify},
+    combinator::{opt, recognize, verify},
     multi::many1,
     sequence::{pair, preceded, terminated},
 };
 
-use crate::parsers::{nickname_parser, user_parser};
+use crate::parsers::{host_parser, nickname_parser, user_parser};
 
 pub enum IrcCommand {
     PASS(String),
     NICK(String),
     USER(String, u32, String),
     OPER(String, String),
-    MODE(String, Vec<(char, char)>),
-    SERVICE,
-    QUIT,
-    SQUIT,
+    MODE(String, Vec<(char, Vec<char>)>),
+    SERVICE(String, String, String, String),
+    QUIT(Option<String>),
+    SQUIT(String, String),
 }
 
 impl IrcCommand {
@@ -29,6 +31,9 @@ impl IrcCommand {
             valid_user_message_parser,
             valid_oper_message_parser,
             valid_mode_message_parser,
+            valid_service_message_parser,
+            valid_quit_message_parser,
+            valid_squit_message_parser,
         ));
         parser.parse(input)
     }
@@ -44,10 +49,10 @@ impl IrcCommand {
 //    the connection is made.  Currently this requires that user send a
 //    PASS command before sending the NICK/USER combination.
 fn valid_password_message_parser(input: &str) -> IResult<&str, IrcCommand> {
-    let mut parser = recognize(verify(
-        preceded(tag("PASS "), take_till(|c| c == '\n' || c == '\r')),
+    let mut parser = verify(
+        preceded(tag_no_case("PASS "), take_till(|c| c == '\n' || c == '\r')),
         |s: &str| !s.trim().is_empty(),
-    ));
+    );
     let (rem, parsed) = parser.parse(input)?;
     Ok((rem, IrcCommand::PASS(parsed.to_string())))
 }
@@ -60,8 +65,8 @@ fn valid_password_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 //    NICK command is used to give user a nickname or change the existing
 //    one.
 fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcCommand> {
-    let mut parser = recognize(preceded(
-        tag("NICK "),
+    let mut parser = (preceded(
+        tag_no_case("NICK "),
         terminated(nickname_parser, line_ending),
     ));
     let (rem, parsed) = parser.parse(input)?;
@@ -98,7 +103,7 @@ fn user_mode_parser(input: &str) -> IResult<&str, u32> {
 
 fn valid_user_message_parser(input: &str) -> IResult<&str, IrcCommand> {
     let (rem, (username, mode, _unused, realname)) = ((
-        preceded(tag("USER "), user_parser),
+        preceded(tag_no_case("USER "), user_parser),
         preceded(space1, user_mode_parser),
         preceded(space1, take_while1(|c: char| !c.is_whitespace())), // <unused> (single token)
         preceded(space1, preceded(tag(":"), take_till(|_| false))),  // realname until end
@@ -123,7 +128,10 @@ fn valid_user_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 
 fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcCommand> {
     let (rem, (name, password)) = ((
-        preceded(tag("OPER "), take_while1(|c: char| !c.is_whitespace())),
+        preceded(
+            tag_no_case("OPER "),
+            take_while1(|c: char| !c.is_whitespace()),
+        ),
         preceded(space1, take_till(|c| c == '\n' || c == '\r')),
     ))
         .parse(input)?;
@@ -181,10 +189,10 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 //    The flag 's' is obsolete but MAY still be used.
 fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcCommand> {
     let (rem, (nickname, modes)) = (
-        preceded(tag("MODE "), nickname_parser),
+        preceded(tag_no_case("MODE "), nickname_parser),
         many1(pair(
             alt((char('+'), char('-'))),
-            alt((char('i'), char('w'), char('o'), char('O'), char('r'))),
+            many1(alt((char('i'), char('w'), char('o'), char('O'), char('r')))),
         )),
     )
         .parse(input)?;
@@ -213,3 +221,71 @@ fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 //    names all match the mask.
 
 //    The <type> parameter is currently reserved for future usage.
+
+fn valid_service_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+    let (rem, (nickname, _reserved, distribution, service_type, _reserved_2, info)) = (
+        preceded(tag_no_case("SERVICE "), nickname_parser),
+        preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // reserved
+        preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // distribution
+        preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // type
+        preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // reserved
+        preceded(tag(" :"), take_till(|c: char| c == '\n' || c == '\r')),
+    )
+        .parse(input)?;
+    Ok((
+        rem,
+        IrcCommand::SERVICE(
+            nickname.to_string(),
+            distribution.to_string(),
+            service_type.to_string(),
+            info.to_string(),
+        ),
+    ))
+}
+// 3.1.7 Quit
+
+//       Command: QUIT
+//    Parameters: [ <Quit Message> ]
+
+//    A client session is terminated with a quit message.  The server
+//    acknowledges this by sending an ERROR message to the client.
+// TODO TEST avec recognize et None
+fn valid_quit_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+    let (rem, parsed) = (preceded(
+        tag_no_case("QUIT"),
+        opt(preceded(tag(" :"), take_till(|c| c == '\n' || c == '\r'))),
+    ))
+    .parse(input)?;
+    let parsed = parsed.map(str::to_string);
+    Ok((rem, IrcCommand::QUIT(parsed)))
+}
+
+// 3.1.8 Squit
+
+//       Command: SQUIT
+//    Parameters: <server> <comment>
+
+//    The SQUIT command is available only to operators.  It is used to
+//    disconnect server links.  Also servers can generate SQUIT messages on
+//    error conditions.  A SQUIT message may also target a remote server
+//    connection.  In this case, the SQUIT message will simply be sent to
+//    the remote server without affecting the servers in between the
+//    operator and the remote server.
+
+//    The <comment> SHOULD be supplied by all operators who execute a SQUIT
+//    for a remote server.  The server ordered to disconnect its peer
+//    generates a WALLOPS message with <comment> included, so that other
+//    users may be aware of the reason of this action.
+
+fn valid_squit_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+    let (rem, (server, comment)) = (
+        preceded(tag_no_case("SQUIT "), host_parser),
+        preceded(tag(" :"), take_till(|c| c == '\n' || c == '\r')),
+    )
+        .parse(input)?;
+    // todo!()
+    Ok((
+        rem,
+        IrcCommand::SQUIT(server.to_string(), comment.to_string()),
+    ))
+}
