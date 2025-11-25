@@ -1,5 +1,3 @@
-use std::path::PrefixComponent;
-
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -12,7 +10,7 @@ use nom::{
 
 use crate::parsers::{host_parser, nickname_parser, user_parser};
 
-pub enum IrcCommand {
+pub enum IrcConnectionRegistration {
     PASS(String),
     NICK(String),
     USER(String, u32, String),
@@ -23,7 +21,7 @@ pub enum IrcCommand {
     SQUIT(String, String),
 }
 
-impl IrcCommand {
+impl IrcConnectionRegistration {
     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
         let mut parser = alt((
             valid_password_message_parser,
@@ -48,13 +46,13 @@ impl IrcCommand {
 //    optional password can and MUST be set before any attempt to register
 //    the connection is made.  Currently this requires that user send a
 //    PASS command before sending the NICK/USER combination.
-fn valid_password_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_password_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let mut parser = verify(
         preceded(tag_no_case("PASS "), take_till(|c| c == '\n' || c == '\r')),
         |s: &str| !s.trim().is_empty(),
     );
     let (rem, parsed) = parser.parse(input)?;
-    Ok((rem, IrcCommand::PASS(parsed.to_string())))
+    Ok((rem, IrcConnectionRegistration::PASS(parsed.to_string())))
 }
 
 //     3.1.2 Nick message
@@ -64,13 +62,13 @@ fn valid_password_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 
 //    NICK command is used to give user a nickname or change the existing
 //    one.
-fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let mut parser = (preceded(
         tag_no_case("NICK "),
         terminated(nickname_parser, line_ending),
     ));
     let (rem, parsed) = parser.parse(input)?;
-    Ok((rem, IrcCommand::NICK(parsed.to_string())))
+    Ok((rem, IrcConnectionRegistration::NICK(parsed.to_string())))
 }
 
 // 3.1.3 User message
@@ -101,7 +99,7 @@ fn user_mode_parser(input: &str) -> IResult<&str, u32> {
     Ok((rem, mode))
 }
 
-fn valid_user_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_user_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (username, mode, _unused, realname)) = ((
         preceded(tag_no_case("USER "), user_parser),
         preceded(space1, user_mode_parser),
@@ -112,7 +110,7 @@ fn valid_user_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 
     Ok((
         rem,
-        IrcCommand::USER(username.to_string(), mode, realname.to_string()),
+        IrcConnectionRegistration::USER(username.to_string(), mode, realname.to_string()),
     ))
 }
 
@@ -126,7 +124,7 @@ fn valid_user_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 //    Operator privileges.  Upon success, the user will receive a MODE
 //    message (see section 3.1.5) indicating the new user modes.
 
-fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (name, password)) = ((
         preceded(
             tag_no_case("OPER "),
@@ -138,7 +136,7 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 
     Ok((
         rem,
-        IrcCommand::OPER(name.to_string(), password.to_string()),
+        IrcConnectionRegistration::OPER(name.to_string(), password.to_string()),
     ))
 }
 
@@ -187,7 +185,7 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 //    status on channels.
 
 //    The flag 's' is obsolete but MAY still be used.
-fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (nickname, modes)) = (
         preceded(tag_no_case("MODE "), nickname_parser),
         many1(pair(
@@ -196,7 +194,7 @@ fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcCommand> {
         )),
     )
         .parse(input)?;
-    Ok((rem, IrcCommand::MODE(nickname.to_string(), modes)))
+    Ok((rem, IrcConnectionRegistration::MODE(nickname.to_string(), modes)))
 }
 
 // 3.1.6 Service message
@@ -222,7 +220,7 @@ fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 
 //    The <type> parameter is currently reserved for future usage.
 
-fn valid_service_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_service_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (nickname, _reserved, distribution, service_type, _reserved_2, info)) = (
         preceded(tag_no_case("SERVICE "), nickname_parser),
         preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // reserved
@@ -234,7 +232,7 @@ fn valid_service_message_parser(input: &str) -> IResult<&str, IrcCommand> {
         .parse(input)?;
     Ok((
         rem,
-        IrcCommand::SERVICE(
+        IrcConnectionRegistration::SERVICE(
             nickname.to_string(),
             distribution.to_string(),
             service_type.to_string(),
@@ -250,14 +248,14 @@ fn valid_service_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 //    A client session is terminated with a quit message.  The server
 //    acknowledges this by sending an ERROR message to the client.
 // TODO TEST avec recognize et None
-fn valid_quit_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_quit_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, parsed) = (preceded(
         tag_no_case("QUIT"),
         opt(preceded(tag(" :"), take_till(|c| c == '\n' || c == '\r'))),
     ))
     .parse(input)?;
     let parsed = parsed.map(str::to_string);
-    Ok((rem, IrcCommand::QUIT(parsed)))
+    Ok((rem, IrcConnectionRegistration::QUIT(parsed)))
 }
 
 // 3.1.8 Squit
@@ -277,7 +275,7 @@ fn valid_quit_message_parser(input: &str) -> IResult<&str, IrcCommand> {
 //    generates a WALLOPS message with <comment> included, so that other
 //    users may be aware of the reason of this action.
 
-fn valid_squit_message_parser(input: &str) -> IResult<&str, IrcCommand> {
+fn valid_squit_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (server, comment)) = (
         preceded(tag_no_case("SQUIT "), host_parser),
         preceded(tag(" :"), take_till(|c| c == '\n' || c == '\r')),
@@ -286,6 +284,59 @@ fn valid_squit_message_parser(input: &str) -> IResult<&str, IrcCommand> {
     // todo!()
     Ok((
         rem,
-        IrcCommand::SQUIT(server.to_string(), comment.to_string()),
+        IrcConnectionRegistration::SQUIT(server.to_string(), comment.to_string()),
     ))
+}
+
+
+pub enum IrcChannelOperation {
+    JOIN,
+    PART,
+    MODE,
+    TOPIC,
+    NAMES,
+    LIST,
+    INVITE,
+    KICK,
+}
+
+pub enum IrcMessageSending{
+    PRIVMSG,
+    NOTICE,
+    MOTD,
+    VERSION,
+    STATS,
+    LINKS,
+    TIME,
+    CONNECT,
+    TRACE,
+    ADMIN,
+    INFO,
+}
+
+pub enum IrcServiceQueryCommands{
+    SERVLIST,
+    SQUERY,
+    WHO,
+    WHOIS,
+    WHOWAS
+}
+
+pub enum IrcMiscellaneousMessages{
+    KILL,
+    PING,
+    PONG,
+    ERROR,
+}
+
+pub enum IrcOptionalFeatures {
+    AWAY,
+    REHASH,
+    DIE,
+    RESTART,
+    SUMMON,
+    USERS,
+    WALLOPS,
+    USERHOST,
+    ISON,
 }
