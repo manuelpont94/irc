@@ -4,16 +4,19 @@ use nom::{
     bytes::complete::{tag, tag_no_case, take_till, take_while1},
     character::complete::{char, line_ending, space1},
     combinator::{opt, recognize, verify},
-    multi::many1,
+    multi::{many1, separated_list1},
     sequence::{pair, preceded, terminated},
 };
 
-use crate::parsers::{host_parser, nickname_parser, user_parser};
+use crate::parsers::{
+    channel_parser, host_parser, key_parser, nickname_parser, trailing_parser, user_parser,
+};
 
+#[derive(Debug, PartialEq)]
 pub enum IrcConnectionRegistration {
-    PASS(String),
-    NICK(String),
-    USER(String, u32, String),
+    PASS(String),              // with few tests
+    NICK(String),              // with few tests
+    USER(String, u32, String), // with few tests
     OPER(String, String),
     MODE(String, Vec<(char, Vec<char>)>),
     SERVICE(String, String, String, String),
@@ -63,10 +66,7 @@ fn valid_password_message_parser(input: &str) -> IResult<&str, IrcConnectionRegi
 //    NICK command is used to give user a nickname or change the existing
 //    one.
 fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
-    let mut parser = (preceded(
-        tag_no_case("NICK "),
-        terminated(nickname_parser, line_ending),
-    ));
+    let mut parser = preceded(tag_no_case("NICK "), nickname_parser);
     let (rem, parsed) = parser.parse(input)?;
     Ok((rem, IrcConnectionRegistration::NICK(parsed.to_string())))
 }
@@ -102,9 +102,9 @@ fn user_mode_parser(input: &str) -> IResult<&str, u32> {
 fn valid_user_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (username, mode, _unused, realname)) = ((
         preceded(tag_no_case("USER "), user_parser),
-        preceded(space1, user_mode_parser),
-        preceded(space1, take_while1(|c: char| !c.is_whitespace())), // <unused> (single token)
-        preceded(space1, preceded(tag(":"), take_till(|_| false))),  // realname until end
+        preceded(tag(" "), user_mode_parser),
+        preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // <unused> (single token)
+        preceded(tag(" :"), trailing_parser),                          // realname until end
     ))
         .parse(input)?;
 
@@ -130,7 +130,10 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
             tag_no_case("OPER "),
             take_while1(|c: char| !c.is_whitespace()),
         ),
-        preceded(space1, take_till(|c| c == '\n' || c == '\r')),
+        preceded(
+            space1,
+            terminated(take_till(|c| c == '\n' || c == '\r'), line_ending),
+        ),
     ))
         .parse(input)?;
 
@@ -194,7 +197,10 @@ fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
         )),
     )
         .parse(input)?;
-    Ok((rem, IrcConnectionRegistration::MODE(nickname.to_string(), modes)))
+    Ok((
+        rem,
+        IrcConnectionRegistration::MODE(nickname.to_string(), modes),
+    ))
 }
 
 // 3.1.6 Service message
@@ -227,7 +233,7 @@ fn valid_service_message_parser(input: &str) -> IResult<&str, IrcConnectionRegis
         preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // distribution
         preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // type
         preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // reserved
-        preceded(tag(" :"), take_till(|c: char| c == '\n' || c == '\r')),
+        preceded(tag(" :"), trailing_parser),
     )
         .parse(input)?;
     Ok((
@@ -288,10 +294,10 @@ fn valid_squit_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistr
     ))
 }
 
-
 pub enum IrcChannelOperation {
-    JOIN,
-    PART,
+    LEAVE, // JOIN 0 - should be tested befoire JOIN Channel
+    JOIN(Vec<String>, Option<Vec<String>>),
+    PART(Vec<String>, Option<String>),
     MODE,
     TOPIC,
     NAMES,
@@ -299,8 +305,101 @@ pub enum IrcChannelOperation {
     INVITE,
     KICK,
 }
+impl IrcChannelOperation {
+    pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
+        let mut parser = alt((
+            valid_join_channel_parser,
+            valid_leave_channel_parser,
+            valid_part_channel_parser,
+        ));
+        parser.parse(input)
+    }
+}
 
-pub enum IrcMessageSending{
+// 3.2.1 Join message
+
+//       Command: JOIN
+//    Parameters: ( <channel> *( "," <channel> ) [ <key> *( "," <key> ) ] )
+//                / "0"
+
+//    The JOIN command is used by a user to request to start listening to
+//    the specific channel.  Servers MUST be able to parse arguments in the
+//    form of a list of target, but SHOULD NOT use lists when sending JOIN
+//    messages to clients.
+
+//    Once a user has joined a channel, he receives information about
+//    all commands his server receives affecting the channel.  This
+//    includes JOIN, MODE, KICK, PART, QUIT and of course PRIVMSG/NOTICE.
+//    This allows channel members to keep track of the other channel
+//    members, as well as channel modes.
+
+//    If a JOIN is successful, the user receives a JOIN message as
+//    confirmation and is then sent the channel's topic (using RPL_TOPIC) and
+//    the list of users who are on the channel (using RPL_NAMREPLY), which
+//    MUST include the user joining.
+
+//    Note that this message accepts a special argument ("0"), which is
+//    a special request to leave all channels the user is currently a member
+//    of.  The server will process this message as if the user had sent
+//    a PART command (See Section 3.2.2) for each channel he is a member
+//    of.
+
+pub fn valid_join_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (channels, keys)) = preceded(
+        tag_no_case("JOIN "),
+        (
+            (separated_list1(char(','), channel_parser)),
+            opt(preceded(tag(" "), separated_list1(char(','), key_parser))),
+        ),
+    )
+    .parse(input)?;
+    let channels = channels
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<String>>();
+    let keys = keys.map(|v| v.into_iter().map(str::to_string).collect::<Vec<String>>());
+    Ok((rem, IrcChannelOperation::JOIN(channels, keys)))
+}
+
+// LEAVE Message / JOIN 0
+pub fn valid_leave_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, _join0) = recognize(tag_no_case("JOIN 0")).parse(input)?;
+    Ok((rem, IrcChannelOperation::LEAVE))
+}
+
+// 3.2.2 Part message
+
+//       Command: PART
+//    Parameters: <channel> *( "," <channel> ) [ <Part Message> ]
+
+//    The PART command causes the user sending the message to be removed
+//    from the list of active members for all given channels listed in the
+//    parameter string.  If a "Part Message" is given, this will be sent
+//    instead of the default message, the nickname.  This request is always
+//    granted by the server.
+
+//    Servers MUST be able to parse arguments in the form of a list of
+//    target, but SHOULD NOT use lists when sending PART messages to
+//    clients.
+
+pub fn valid_part_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (channels, optional_message)) = preceded(
+        tag_no_case("PART "),
+        (
+            separated_list1(tag(","), channel_parser),
+            opt(preceded(tag(":"), trailing_parser)),
+        ),
+    )
+    .parse(input)?;
+    let channels = channels
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<String>>();
+    let optional_message = optional_message.map(str::to_string);
+    Ok((rem, IrcChannelOperation::PART(channels, optional_message)))
+}
+
+pub enum IrcMessageSending {
     PRIVMSG,
     NOTICE,
     MOTD,
@@ -314,15 +413,15 @@ pub enum IrcMessageSending{
     INFO,
 }
 
-pub enum IrcServiceQueryCommands{
+pub enum IrcServiceQueryCommands {
     SERVLIST,
     SQUERY,
     WHO,
     WHOIS,
-    WHOWAS
+    WHOWAS,
 }
 
-pub enum IrcMiscellaneousMessages{
+pub enum IrcMiscellaneousMessages {
     KILL,
     PING,
     PONG,
@@ -339,4 +438,81 @@ pub enum IrcOptionalFeatures {
     WALLOPS,
     USERHOST,
     ISON,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_password_message_parser() {
+        // Example:
+        //    PASS secretpasswordhere
+        let input = "PASS secretpasswordhere";
+        let (rem, password) = valid_password_message_parser(input).unwrap();
+        assert!(rem == "");
+        assert_eq!(
+            password,
+            IrcConnectionRegistration::PASS("secretpasswordhere".to_string())
+        );
+        let input = "PASS ";
+        assert!(valid_password_message_parser(input).is_err(), "no password");
+        let input = "PASS";
+        assert!(valid_password_message_parser(input).is_err(), "no password");
+    }
+
+    #[test]
+    fn test_valid_nick_message_parser() {
+        // Example:
+        // NICK Wiz ; Introducing new nick "Wiz" if session is
+        //  still unregistered, or user changing his
+        //  nickname to "Wiz"
+
+        let input = "NICK Wiz";
+        let (rem, nickname) = valid_nick_message_parser(input).unwrap();
+        assert!(rem == "");
+        assert_eq!(nickname, IrcConnectionRegistration::NICK("Wiz".to_string()));
+        let input = "NICK ";
+        assert!(valid_nick_message_parser(input).is_err(), "no nickname");
+        let input = "NICK";
+        assert!(valid_nick_message_parser(input).is_err(), "no nickname");
+    }
+
+    #[test]
+    fn test_valid_user_message_parser() {
+        // Example:
+        // USER guest 0 * :Ronnie Reagan ; User registering themselves with a
+        // username of "guest" and real name
+        // "Ronnie Reagan".
+
+        // USER guest 8 * :Ronnie Reagan ; User registering themselves with a
+        // username of "guest" and real name
+        // "Ronnie Reagan", and asking to be set
+        // invisible.
+
+        let input = "USER guest 0 * :Ronnie Reagan";
+        let (rem, nickname) = valid_user_message_parser(input).unwrap();
+        assert!(rem == "");
+        assert_eq!(
+            nickname,
+            IrcConnectionRegistration::USER(
+                "guest".to_string(),
+                0_u32,
+                "Ronnie Reagan".to_string()
+            )
+        );
+        let input = "USER guest 8 * :Ronnie Reagan";
+        let (rem, nickname) = valid_user_message_parser(input).unwrap();
+        assert!(rem == "");
+        assert_eq!(
+            nickname,
+            IrcConnectionRegistration::USER(
+                "guest".to_string(),
+                8_u32,
+                "Ronnie Reagan".to_string()
+            )
+        );
+        let input = "USER guest * :Ronnie Reagan";
+        assert!(valid_user_message_parser(input).is_err(), "missing mode");
+    }
 }

@@ -8,6 +8,58 @@ use nom::{
     sequence::{pair, preceded},
 };
 
+// 2.3.1 Message format in Augmented BNF
+
+//    The protocol messages must be extracted from the contiguous stream of
+//    octets.  The current solution is to designate two characters, CR and
+//    LF, as message separators.  Empty messages are silently ignored,
+//    which permits use of the sequence CR-LF between messages without
+//    extra problems.
+
+//    The extracted message is parsed into the components <prefix>,
+//    <command> and list of parameters (<params>).
+
+//     The Augmented BNF representation for this is:
+
+//  a.   message    =  [ ":" prefix SPACE ] command [ params ] crlf
+//  b.   prefix     =  servername / ( nickname [ [ "!" user ] "@" host ] )
+//  C.   command    =  1*letter / 3digit
+//  d.   params     =  *14( SPACE middle ) [ SPACE ":" trailing ]
+//                =/ 14( SPACE middle ) [ SPACE [ ":" ] trailing ]
+
+//  e.   nospcrlfcl =  %x01-09 / %x0B-0C / %x0E-1F / %x21-39 / %x3B-FF
+//                     ; any octet except NUL, CR, LF, " " and ":"
+//  f.   middle     =  nospcrlfcl *( ":" / nospcrlfcl )
+//  g.   trailing   =  *( ":" / " " / nospcrlfcl )
+
+//  h.   SPACE      =  %x20        ; space character
+//  i.   crlf       =  %x0D %x0A   ; "carriage return" "linefeed"
+
+//  g.   trailing   =  *( ":" / " " / nospcrlfcl )
+fn is_nospcrlfcl(c: u8) -> bool {
+    match c {
+        0x01..=0x09 | 0x0B..=0x0C | 0x0E..=0x1F | 0x21..=0x39 | 0x3B..=0xFF => true,
+        _ => false,
+    }
+}
+
+//  f.   middle     =  nospcrlfcl *( ":" / nospcrlfcl )
+pub fn middle_parser(input: &str) -> IResult<&str, &str> {
+    recognize(pair(
+        take_while1(|c: char| is_nospcrlfcl(c as u8)),
+        many0(alt((
+            tag(":"), // literal colon allowed after first char
+            take_while1(|c: char| is_nospcrlfcl(c as u8)),
+        ))),
+    ))
+    .parse(input)
+}
+
+//  g.   trailing   =  *( ":" / " " / nospcrlfcl )
+pub fn trailing_parser(input: &str) -> IResult<&str, &str> {
+    take_while(|c: char| c == ':' || c == ' ' || is_nospcrlfcl(c as u8)).parse(input)
+}
+
 // 00.  target     =  nickname / server
 // 01.  msgtarget  =  msgto *( "," msgto )
 // 02.  msgto      =  channel / ( user [ "%" host ] "@" servername )
@@ -37,7 +89,7 @@ use nom::{
 
 // 15.  user       =  1*( %x01-09 / %x0B-0C / %x0E-1F / %x21-3F / %x41-FF )
 //                   ; any octet except NUL, CR, LF, " " and "@"
-//   key        =  1*23( %x01-05 / %x07-08 / %x0C / %x0E-1F / %x21-7F )
+// 16.  key        =  1*23( %x01-05 / %x07-08 / %x0C / %x0E-1F / %x21-7F )
 //                   ; any 7-bit US_ASCII character,
 //                   ; except NUL, CR, LF, FF, h/v TABs, and " "
 //   letter     =  %x41-5A / %x61-7A       ; A-Z / a-z
@@ -140,10 +192,13 @@ pub fn host_parser(input: &str) -> IResult<&str, &str> {
 // 06.  hostname   =  shortname *( "." shortname )
 // hostname = shortname *( "." shortname )
 pub fn hostname_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = verify(recognize((
-        shortname_parser,
-        many0(preceded(tag("."), shortname_parser)),
-    )), |s:&str| s.len()<=63) ;
+    let mut parser = verify(
+        recognize((
+            shortname_parser,
+            many0(preceded(tag("."), shortname_parser)),
+        )),
+        |s: &str| s.len() <= 63,
+    );
     parser.parse(input)
 }
 
@@ -298,6 +353,30 @@ fn is_user_char(c: char) -> bool {
 /// Parses "user" according to the ABNF rule.
 pub fn user_parser(input: &str) -> IResult<&str, &str> {
     take_while1(is_user_char).parse(input)
+}
+
+// 16.  key        =  1*23( %x01-05 / %x07-08 / %x0C / %x0E-1F / %x21-7F )
+//                   ; any 7-bit US_ASCII character,
+//                   ; except NUL, CR, LF, FF, h/v TABs, and " "
+fn is_key_char(c: char) -> bool {
+    // Reject any non-ASCII byte (multi-byte UTF-8)
+    if !c.is_ascii() {
+        return false;
+    }
+    let b = c as u8;
+    matches!(b,
+        0x01..=0x05 |  // exclude NUL, ACK
+        0x07..=0x08 |  // exclude ACK, include BEL and BS
+        0x0C |         // FF
+        0x0E..=0x1F |  // exclude CR (0x0D), include SO through US
+        0x21..=0x7F    // excludes SPACE (0x20), includes ! through DEL
+    )
+}
+
+/// Parses "key" according to RFC2812 ABNF rule.
+/// Maximum length is 23 characters.
+pub fn key_parser(input: &str) -> IResult<&str, &str> {
+    verify(take_while1(is_key_char), |s: &str| s.len() <= 23).parse(input)
 }
 
 #[cfg(test)]
