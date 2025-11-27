@@ -292,7 +292,7 @@ pub fn nickname_parser(input: &str) -> IResult<&str, &str> {
     let parser = recognize(pair(first, tail));
 
     // Enforce max length = 9
-    verify(parser, |s: &str| s.len() <= 9).parse(input)
+    verify(parser, |s: &str| s.len() <= 9).parse(input) // first char control ensure that no empty string can be valid
 }
 
 // 12.  targetmask =  ( "$" / "#" ) mask

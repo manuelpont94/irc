@@ -2,10 +2,10 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_till, take_while1},
-    character::complete::{char, line_ending, space1},
+    character::complete::{char, space1},
     combinator::{opt, recognize, verify},
     multi::{many1, separated_list1},
-    sequence::{pair, preceded, terminated},
+    sequence::{pair, preceded},
 };
 
 use crate::parsers::{
@@ -17,7 +17,7 @@ pub enum IrcConnectionRegistration {
     PASS(String),              // with few tests
     NICK(String),              // with few tests
     USER(String, u32, String), // with few tests
-    OPER(String, String),
+    OPER(String, String),      // with few tests
     MODE(String, Vec<(char, Vec<char>)>),
     SERVICE(String, String, String, String),
     QUIT(Option<String>),
@@ -130,9 +130,9 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
             tag_no_case("OPER "),
             take_while1(|c: char| !c.is_whitespace()),
         ),
-        preceded(
-            space1,
-            terminated(take_till(|c| c == '\n' || c == '\r'), line_ending),
+        verify(
+            preceded(space1, take_till(|c| c == '\n' || c == '\r')),
+            |s: &str| !s.is_empty(),
         ),
     ))
         .parse(input)?;
@@ -455,7 +455,7 @@ mod tests {
             password,
             IrcConnectionRegistration::PASS("secretpasswordhere".to_string())
         );
-        let input = "PASS ";
+        let input = "PASS  ";
         assert!(valid_password_message_parser(input).is_err(), "no password");
         let input = "PASS";
         assert!(valid_password_message_parser(input).is_err(), "no password");
@@ -472,7 +472,7 @@ mod tests {
         let (rem, nickname) = valid_nick_message_parser(input).unwrap();
         assert!(rem == "");
         assert_eq!(nickname, IrcConnectionRegistration::NICK("Wiz".to_string()));
-        let input = "NICK ";
+        let input = "NICK  ";
         assert!(valid_nick_message_parser(input).is_err(), "no nickname");
         let input = "NICK";
         assert!(valid_nick_message_parser(input).is_err(), "no nickname");
@@ -515,4 +515,69 @@ mod tests {
         let input = "USER guest * :Ronnie Reagan";
         assert!(valid_user_message_parser(input).is_err(), "missing mode");
     }
+
+    #[test]
+    fn test_valid_oper_message_parser() {
+        // Example:
+        //    OPER foo bar ; Attempt to register as an operator
+        //    using a username of "foo" and "bar"
+        //    as the password.
+        let input = "OPER foo bar";
+        let (rem, nickname) = valid_oper_message_parser(input).unwrap();
+        assert!(rem == "");
+        assert_eq!(
+            nickname,
+            IrcConnectionRegistration::OPER("foo".to_string(), "bar".to_string())
+        );
+        let input = "OPER foo ";
+        // dbg!(valid_oper_message_parser(input));
+        assert!(valid_oper_message_parser(input).is_err(), "no password");
+        let input = "OPER";
+        assert!(
+            valid_oper_message_parser(input).is_err(),
+            "no user / no password"
+        );
+    }
+
+    #[test]
+    fn test_valid_mode_message_parser() {
+        // Example:
+
+        let input = "NICK Wiz";
+        let (rem, nickname) = valid_nick_message_parser(input).unwrap();
+        assert!(rem == "");
+        assert_eq!(nickname, IrcConnectionRegistration::NICK("Wiz".to_string()));
+        let input = "NICK  ";
+        assert!(valid_nick_message_parser(input).is_err(), "no nickname");
+        let input = "NICK";
+        assert!(valid_nick_message_parser(input).is_err(), "no nickname");
+    }
 }
+
+// ## Valid Examples
+// ```
+// irc.example.com          ✓ Three shortnames separated by dots
+// tolsun.oulu.fi           ✓ Valid Finnish server
+// cm22.eng.umd.edu         ✓ Starts with digits, has hyphens not at end
+// localhost                ✓ Single shortname
+// 127.0.0.1                ✓ IP address format (shortnames starting with digits)
+// irc-server.net           ✓ Hyphen in middle
+// a                        ✓ Single character
+// 123.456.789.0            ✓ All digits (numeric format)
+// test-123.example.org     ✓ Mix of letters, digits, hyphens
+// ```
+
+// ## Invalid Examples
+// ```
+// -irc.example.com         ✗ Shortname starts with hyphen
+// irc-.example.com         ✗ Shortname ends with hyphen
+// irc..example.com         ✗ Empty shortname (double dot)
+// irc_server.com           ✗ Underscore not allowed
+// irc server.com           ✗ Space not allowed
+// irc.example.com.         ✗ Trailing dot (empty final shortname)
+// .irc.example.com         ✗ Leading dot (empty first shortname)
+// irc@example.com          ✗ '@' not allowed
+// irc.exam ple.com         ✗ Space in shortname
+// [irc].example.com        ✗ Brackets not allowed
+// this-is-a-very-long-server-name-that-exceeds-sixty-three-characters-limit.com
+//                          ✗ Exceeds 63 character maximum
