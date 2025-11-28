@@ -36,6 +36,8 @@ use nom::{
 //  i.   crlf       =  %x0D %x0A   ; "carriage return" "linefeed"
 
 //  g.   trailing   =  *( ":" / " " / nospcrlfcl )
+
+//  h.   wildcards = 3.3.1 Private messages [...] Wildcards are the  '*' and '?'  characters.
 fn is_nospcrlfcl(c: u8) -> bool {
     match c {
         0x01..=0x09 | 0x0B..=0x0C | 0x0E..=0x1F | 0x21..=0x39 | 0x3B..=0xFF => true,
@@ -58,6 +60,11 @@ pub fn middle_parser(input: &str) -> IResult<&str, &str> {
 //  g.   trailing   =  *( ":" / " " / nospcrlfcl )
 pub fn trailing_parser(input: &str) -> IResult<&str, &str> {
     take_while(|c: char| c == ':' || c == ' ' || is_nospcrlfcl(c as u8)).parse(input)
+}
+
+//  h.   wildcards = 3.3.1 Private messages [...] Wildcards are the  '*' and '?'  characters.
+pub fn wildcards_parser(input: &str) -> IResult<&str, &str> {
+    alt((tag("#"), tag("?"))).parse(input)
 }
 
 // 00.  target     =  nickname / server

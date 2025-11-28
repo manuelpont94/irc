@@ -2,7 +2,7 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_till, take_while1},
-    character::complete::{char, space1},
+    character::complete::{char, satisfy, space1},
     combinator::{opt, recognize, verify},
     multi::{many1, separated_list1},
     sequence::{pair, preceded},
@@ -14,11 +14,11 @@ use crate::parsers::{
 
 #[derive(Debug, PartialEq)]
 pub enum IrcConnectionRegistration {
-    PASS(String),              // with few tests
-    NICK(String),              // with few tests
-    USER(String, u32, String), // with few tests
-    OPER(String, String),      // with few tests
-    MODE(String, Vec<(char, Vec<char>)>),
+    PASS(String),                         // with few tests
+    NICK(String),                         // with few tests
+    USER(String, u32, String),            // with few tests
+    OPER(String, String),                 // with few tests
+    MODE(String, Vec<(char, Vec<char>)>), // with few tests
     SERVICE(String, String, String, String),
     QUIT(Option<String>),
     SQUIT(String, String),
@@ -191,10 +191,13 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
 fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (nickname, modes)) = (
         preceded(tag_no_case("MODE "), nickname_parser),
-        many1(pair(
-            alt((char('+'), char('-'))),
-            many1(alt((char('i'), char('w'), char('o'), char('O'), char('r')))),
-        )),
+        preceded(
+            tag(" "),
+            many1(pair(
+                alt((char('+'), char('-'))),
+                many1(alt((char('i'), char('w'), char('o'), char('O'), char('r')))),
+            )),
+        ),
     )
         .parse(input)?;
     Ok((
@@ -298,8 +301,8 @@ pub enum IrcChannelOperation {
     LEAVE, // JOIN 0 - should be tested befoire JOIN Channel
     JOIN(Vec<String>, Option<Vec<String>>),
     PART(Vec<String>, Option<String>),
-    MODE,
-    TOPIC,
+    MODE(String, Vec<(char, Vec<char>)>),
+    TOPIC(String, Option<String>),
     NAMES,
     LIST,
     INVITE,
@@ -311,6 +314,8 @@ impl IrcChannelOperation {
             valid_join_channel_parser,
             valid_leave_channel_parser,
             valid_part_channel_parser,
+            valid_mode_channel_parser,
+            valid_topic_channel_parser,
         ));
         parser.parse(input)
     }
@@ -398,6 +403,136 @@ pub fn valid_part_channel_parser(input: &str) -> IResult<&str, IrcChannelOperati
     let optional_message = optional_message.map(str::to_string);
     Ok((rem, IrcChannelOperation::PART(channels, optional_message)))
 }
+
+// 3.2.3 Channel mode message
+
+//       Command: MODE
+//    Parameters: <channel> *( ( "-" / "+" ) *<modes> *<modeparams> )
+
+//    The MODE command is provided so that users may query and change the
+//    characteristics of a channel.  For more details on available modes
+//    and their uses, see "Internet Relay Chat: Channel Management" [IRC-
+//    CHAN].  Note that there is a maximum limit of three (3) changes per
+//    command for modes that take a parameter.
+//    https://www.rfc-editor.org/rfc/rfc2811
+//    The various modes available for channels are as follows:
+
+//         O - give "channel creator" status;
+//         o - give/take channel operator privilege;
+//         v - give/take the voice privilege;
+
+//         a - toggle the anonymous channel flag;
+//         i - toggle the invite-only channel flag;
+//         m - toggle the moderated channel;
+//         n - toggle the no messages to channel from clients on the
+//             outside;
+//         q - toggle the quiet channel flag;
+//         p - toggle the private channel flag;
+//         s - toggle the secret channel flag;
+//         r - toggle the server reop channel flag;
+//         t - toggle the topic settable by channel operator only flag;
+
+//         k - set/remove the channel key (password);
+//         l - set/remove the user limit to channel;
+
+//         b - set/remove ban mask to keep users out;
+//         e - set/remove an exception mask to override a ban mask;
+//         I - set/remove an invitation mask to automatically override
+//             the invite-only flag;
+
+fn is_channel_mode(c: char) -> bool {
+    matches!(
+        c,
+        'O' | 'o'
+            | 'v'
+            | 'a'
+            | 'i'
+            | 'm'
+            | 'n'
+            | 'q'
+            | 'p'
+            | 's'
+            | 'r'
+            | 't'
+            | 'k'
+            | 'l'
+            | 'b'
+            | 'e'
+            | 'I'
+    )
+}
+
+fn valid_mode_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (channel, modes)) = (
+        preceded(tag_no_case("MODE "), channel_parser),
+        preceded(
+            tag(" "),
+            many1(pair(
+                alt((char('+'), char('-'))),
+                many1(satisfy(is_channel_mode)),
+            )),
+        ),
+    )
+        .parse(input)?;
+    Ok((rem, IrcChannelOperation::MODE(channel.to_string(), modes)))
+}
+
+// 3.2.4 Topic message
+
+//       Command: TOPIC
+//    Parameters: <channel> [ <topic> ]
+
+//    The TOPIC command is used to change or view the topic of a channel.
+//    The topic for channel <channel> is returned if there is no <topic>
+//    given.  If the <topic> parameter is present, the topic for that
+//    channel will be changed, if this action is allowed for the user
+//    requesting it.  If the <topic> parameter is an empty string, the
+//    topic for that channel will be removed.
+
+fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (channel, topic)) = (
+        preceded(tag_no_case("TOPIC "), channel_parser),
+        opt(preceded(tag(" "), trailing_parser)),
+    )
+        .parse(input)?;
+    let topic = topic.map(str::to_owned);
+    Ok((rem, IrcChannelOperation::TOPIC(channel.to_string(), topic)))
+}
+
+// 3.2.5 Names message
+
+//       Command: NAMES
+//    Parameters: [ <channel> *( "," <channel> ) [ <target> ] ]
+
+//    By using the NAMES command, a user can list all nicknames that are
+//    visible to him. For more details on what is visible and what is not,
+//    see "Internet Relay Chat: Channel Management" [IRC-CHAN].  The
+//    <channel> parameter specifies which channel(s) to return information
+//    about.  There is no error reply for bad channel names.
+
+//    If no <channel> parameter is given, a list of all channels and their
+//    occupants is returned.  At the end of this list, a list of users who
+//    are visible but either not on any channel or not on a visible channel
+//    are listed as being on `channel' "*".
+
+//    If the <target> parameter is specified, the request is forwarded to
+//    that server which will generate the reply.
+
+//    Wildcards are allowed in the <target> parameter.
+
+// 3.2.6 List message
+
+//       Command: LIST
+//    Parameters: [ <channel> *( "," <channel> ) [ <target> ] ]
+
+//    The list command is used to list channels and their topics.  If the
+//    <channel> parameter is used, only the status of that channel is
+//    displayed.
+
+//    If the <target> parameter is specified, the request is forwarded to
+//    that server which will generate the reply.
+
+//    Wildcards are allowed in the <target> parameter.
 
 pub enum IrcMessageSending {
     PRIVMSG,
@@ -542,15 +677,51 @@ mod tests {
     #[test]
     fn test_valid_mode_message_parser() {
         // Example:
-
-        let input = "NICK Wiz";
-        let (rem, nickname) = valid_nick_message_parser(input).unwrap();
+        //    MODE WiZ -w                     ; Command by WiZ to turn off
+        //                                    reception of WALLOPS messages.
+        //    MODE Angel +i                   ; Command from Angel to make herself
+        //                                    invisible.
+        //    MODE WiZ -o                     ; WiZ 'deopping' (removing operator
+        //                                    status).
+        let input = "MODE Wiz -w";
+        let (rem, mode) = valid_mode_message_parser(input).unwrap();
+        assert_eq!(
+            mode,
+            IrcConnectionRegistration::MODE("Wiz".to_string(), vec![('-', vec!['w'])])
+        );
         assert!(rem == "");
-        assert_eq!(nickname, IrcConnectionRegistration::NICK("Wiz".to_string()));
-        let input = "NICK  ";
-        assert!(valid_nick_message_parser(input).is_err(), "no nickname");
-        let input = "NICK";
-        assert!(valid_nick_message_parser(input).is_err(), "no nickname");
+        let input = "MODE Wiz -ow";
+        let (rem, mode) = valid_mode_message_parser(input).unwrap();
+        assert_eq!(
+            mode,
+            IrcConnectionRegistration::MODE("Wiz".to_string(), vec![('-', vec!['o', 'w'])])
+        );
+        assert!(rem == "");
+        let input = "MODE WiZ +w";
+        let (rem, mode) = valid_mode_message_parser(input).unwrap();
+        assert_eq!(
+            mode,
+            IrcConnectionRegistration::MODE("WiZ".to_string(), vec![('+', vec!['w'])])
+        );
+        assert!(rem == "");
+        let input = "MODE Bob +i-o";
+        let (rem, mode) = valid_mode_message_parser(input).unwrap();
+        assert_eq!(
+            mode,
+            IrcConnectionRegistration::MODE(
+                "Bob".to_string(),
+                vec![('+', vec!['i']), ('-', vec!['o'])]
+            )
+        );
+        assert!(rem == "");
+        let input = "MODE Bob  +i-o";
+        assert!(valid_mode_message_parser(input).is_err(), "too many space");
+        let input = "MODE Bob io";
+        assert!(valid_mode_message_parser(input).is_err(), "no mode +/-");
+        let input = "MODE Bob +-";
+        assert!(valid_mode_message_parser(input).is_err(), "no flag o...");
+        let input = "MODE Bob +q";
+        assert!(valid_mode_message_parser(input).is_err(), "invalid flag q");
     }
 }
 
