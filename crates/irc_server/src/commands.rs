@@ -1,15 +1,24 @@
+use std::fmt::Display;
+
 use nom::{
     IResult, Parser,
     branch::alt,
-    bytes::complete::{tag, tag_no_case, take_till, take_while1},
+    bytes::complete::{tag, tag_no_case, take_till, take_till1, take_while1},
     character::complete::{char, satisfy, space1},
-    combinator::{opt, recognize, verify},
+    combinator::{Opt, opt, recognize, verify},
     multi::{many1, separated_list1},
     sequence::{pair, preceded},
 };
 
-use crate::parsers::{
-    channel_parser, host_parser, key_parser, nickname_parser, trailing_parser, user_parser,
+use crate::{
+    constants::{
+        ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR, ERR_UNKNOWNCOMMAND_NB,
+        ERR_UNKNOWNCOMMAND_STR,
+    },
+    parsers::{
+        channel_parser, host_parser, key_parser, msgtarget_parser, nickname_parser, target_parser,
+        targetmask_parser, trailing_parser, user_parser, wildcards_parser,
+    },
 };
 
 #[derive(Debug, PartialEq)]
@@ -38,6 +47,13 @@ impl IrcConnectionRegistration {
         ));
         parser.parse(input)
     }
+
+    pub fn handle_command(command: &str) -> Result<String, &str> {
+        match IrcConnectionRegistration::irc_command_parser(command) {
+            Ok(valid_commmand) => todo!(),
+            Err(e) => Err("{e}"),
+        }
+    }
 }
 
 //     3.1.1 Password message
@@ -55,7 +71,7 @@ fn valid_password_message_parser(input: &str) -> IResult<&str, IrcConnectionRegi
         |s: &str| !s.trim().is_empty(),
     );
     let (rem, parsed) = parser.parse(input)?;
-    Ok((rem, IrcConnectionRegistration::PASS(parsed.to_string())))
+    Ok((rem, IrcConnectionRegistration::PASS(parsed.to_owned())))
 }
 
 //     3.1.2 Nick message
@@ -68,7 +84,7 @@ fn valid_password_message_parser(input: &str) -> IResult<&str, IrcConnectionRegi
 fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let mut parser = preceded(tag_no_case("NICK "), nickname_parser);
     let (rem, parsed) = parser.parse(input)?;
-    Ok((rem, IrcConnectionRegistration::NICK(parsed.to_string())))
+    Ok((rem, IrcConnectionRegistration::NICK(parsed.to_owned())))
 }
 
 // 3.1.3 User message
@@ -110,7 +126,7 @@ fn valid_user_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
 
     Ok((
         rem,
-        IrcConnectionRegistration::USER(username.to_string(), mode, realname.to_string()),
+        IrcConnectionRegistration::USER(username.to_owned(), mode, realname.to_owned()),
     ))
 }
 
@@ -139,7 +155,7 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
 
     Ok((
         rem,
-        IrcConnectionRegistration::OPER(name.to_string(), password.to_string()),
+        IrcConnectionRegistration::OPER(name.to_owned(), password.to_owned()),
     ))
 }
 
@@ -202,7 +218,7 @@ fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
         .parse(input)?;
     Ok((
         rem,
-        IrcConnectionRegistration::MODE(nickname.to_string(), modes),
+        IrcConnectionRegistration::MODE(nickname.to_owned(), modes),
     ))
 }
 
@@ -242,10 +258,10 @@ fn valid_service_message_parser(input: &str) -> IResult<&str, IrcConnectionRegis
     Ok((
         rem,
         IrcConnectionRegistration::SERVICE(
-            nickname.to_string(),
-            distribution.to_string(),
-            service_type.to_string(),
-            info.to_string(),
+            nickname.to_owned(),
+            distribution.to_owned(),
+            service_type.to_owned(),
+            info.to_owned(),
         ),
     ))
 }
@@ -293,7 +309,7 @@ fn valid_squit_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistr
     // todo!()
     Ok((
         rem,
-        IrcConnectionRegistration::SQUIT(server.to_string(), comment.to_string()),
+        IrcConnectionRegistration::SQUIT(server.to_owned(), comment.to_owned()),
     ))
 }
 
@@ -303,10 +319,10 @@ pub enum IrcChannelOperation {
     PART(Vec<String>, Option<String>),
     MODE(String, Vec<(char, Vec<char>)>),
     TOPIC(String, Option<String>),
-    NAMES,
-    LIST,
-    INVITE,
-    KICK,
+    NAMES(Option<Vec<String>>, Option<String>),
+    LIST(Option<Vec<String>>, Option<String>),
+    INVITE(String, String),
+    KICK(Vec<String>, Vec<String>, Option<String>),
 }
 impl IrcChannelOperation {
     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
@@ -316,8 +332,19 @@ impl IrcChannelOperation {
             valid_part_channel_parser,
             valid_mode_channel_parser,
             valid_topic_channel_parser,
+            valid_names_channel_parser,
+            valid_list_channel_parser,
+            valid_invite_channel_parser,
+            valid_kick_channel_parser,
         ));
         parser.parse(input)
+    }
+
+    pub fn handle_command(command: &str) -> Result<String, &str> {
+        match IrcChannelOperation::irc_command_parser(command) {
+            Ok(valid_commmand) => todo!(),
+            Err(e) => Err("{e}"),
+        }
     }
 }
 
@@ -474,7 +501,7 @@ fn valid_mode_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> 
         ),
     )
         .parse(input)?;
-    Ok((rem, IrcChannelOperation::MODE(channel.to_string(), modes)))
+    Ok((rem, IrcChannelOperation::MODE(channel.to_owned(), modes)))
 }
 
 // 3.2.4 Topic message
@@ -496,7 +523,7 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
     )
         .parse(input)?;
     let topic = topic.map(str::to_owned);
-    Ok((rem, IrcChannelOperation::TOPIC(channel.to_string(), topic)))
+    Ok((rem, IrcChannelOperation::TOPIC(channel.to_owned(), topic)))
 }
 
 // 3.2.5 Names message
@@ -520,6 +547,26 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
 
 //    Wildcards are allowed in the <target> parameter.
 
+fn valid_names_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (_names, params)) = ((
+        tag_no_case("NAMES"),
+        opt(preceded(
+            tag(" "),
+            (
+                separated_list1(tag(","), channel_parser),
+                opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
+            ),
+        )),
+    ))
+        .parse(input)?;
+    let channels = params
+        .clone()
+        .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
+    let target = params.map(|(_, targ)| targ.map(str::to_owned)).flatten();
+    // let topic = topic.map(str::to_owned);
+    Ok((rem, IrcChannelOperation::NAMES(channels, target)))
+}
+
 // 3.2.6 List message
 
 //       Command: LIST
@@ -534,8 +581,94 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
 
 //    Wildcards are allowed in the <target> parameter.
 
+fn valid_list_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (_list, params)) = ((
+        tag_no_case("LIST"),
+        opt(preceded(
+            tag(" "),
+            (
+                separated_list1(tag(","), channel_parser),
+                opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
+            ),
+        )),
+    ))
+        .parse(input)?;
+    let channels = params
+        .clone()
+        .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
+    let target = params.map(|(_, targ)| targ.map(str::to_owned)).flatten();
+    Ok((rem, IrcChannelOperation::LIST(channels, target)))
+}
+
+// 3.2.7 Invite message
+
+//       Command: INVITE
+//    Parameters: <nickname> <channel>
+
+//    The INVITE command is used to invite a user to a channel.  The
+//    parameter <nickname> is the nickname of the person to be invited to
+//    the target channel <channel>.  There is no requirement that the
+//    channel the target user is being invited to must exist or be a valid
+//    channel.  However, if the channel exists, only members of the channel
+//    are allowed to invite other users.  When the channel has invite-only
+//    flag set, only channel operators may issue INVITE command.
+
+//    Only the user inviting and the user being invited will receive
+//    notification of the invitation.  Other channel members are not
+//    notified.  (This is unlike the MODE changes, and is occasionally the
+//    source of trouble for users.)
+
+fn valid_invite_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (nickname, channel)) =
+        (preceded(tag_no_case("INVITE "), (nickname_parser, channel_parser))).parse(input)?;
+    Ok((
+        rem,
+        IrcChannelOperation::INVITE(nickname.to_owned(), channel.to_owned()),
+    ))
+}
+
+// 3.2.8 Kick command
+
+//       Command: KICK
+//    Parameters: <channel> *( "," <channel> ) <user> *( "," <user> )
+//                [<comment>]
+
+//    The KICK command can be used to request the forced removal of a user
+//    from a channel.  It causes the <user> to PART from the <channel> by
+//    force.  For the message to be syntactically correct, there MUST be
+//    either one channel parameter and multiple user parameter, or as many
+//    channel parameters as there are user parameters.  If a "comment" is
+//    given, this will be sent instead of the default message, the nickname
+//    of the user issuing the KICK.
+
+//    The server MUST NOT send KICK messages with multiple channels or
+//    users to clients.  This is necessarily to maintain backward
+//    compatibility with old client software.
+fn valid_kick_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+    let (rem, (channels, users, comment)) = (preceded(
+        tag_no_case("KICK "),
+        (
+            separated_list1(tag(","), channel_parser),
+            (preceded(tag(" "), separated_list1(tag(","), user_parser))),
+            opt(preceded(tag(" :"), trailing_parser)),
+        ),
+    ))
+    .parse(input)?;
+    let channels = channels
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<String>>();
+    let users = users
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<String>>();
+    let comment = comment.map(str::to_owned);
+    Ok((rem, IrcChannelOperation::KICK(channels, users, comment)))
+}
+
 pub enum IrcMessageSending {
-    PRIVMSG,
+    PRIVMSG(String, String),
+
     NOTICE,
     MOTD,
     VERSION,
@@ -546,6 +679,45 @@ pub enum IrcMessageSending {
     TRACE,
     ADMIN,
     INFO,
+}
+
+impl IrcMessageSending {
+    pub fn irc_message_sending_parser(input: &str) -> IResult<&str, Self> {
+        let mut parser = alt((valid_privmsg_message_parser,));
+        parser.parse(input)
+    }
+}
+
+// 3.3.1 Private messages
+
+//       Command: PRIVMSG
+//    Parameters: <msgtarget> <text to be sent>
+
+//    PRIVMSG is used to send private messages between users, as well as to
+//    send messages to channels.  <msgtarget> is usually the nickname of
+//    the recipient of the message, or a channel name.
+
+//    The <msgtarget> parameter may also be a host mask (#<mask>) or server
+//    mask ($<mask>).  In both cases the server will only send the PRIVMSG
+//    to those who have a server or host matching the mask.  The mask MUST
+//    have at least 1 (one) "." in it and no wildcards following the last
+//    ".".  This requirement exists to prevent people sending messages to
+//    "#*" or "$*", which would broadcast to all users.  Wildcards are the
+//    '*' and '?'  characters.  This extension to the PRIVMSG command is
+//    only available to operators.
+
+fn valid_privmsg_message_parser(input: &str) -> IResult<&str, IrcMessageSending> {
+    let (rem, (mstarget, text_to_be_sent)) = (preceded(
+        tag_no_case("PRIVMSG "),
+        (
+            alt((msgtarget_parser, targetmask_parser)),
+            preceded(tag(" :"), trailing_parser),
+        ),
+    ))
+    .parse(input)?;
+    let mstarget = mstarget.to_owned();
+    let text_to_be_sent = text_to_be_sent.to_owned();
+    Ok((rem, IrcMessageSending::PRIVMSG(mstarget, text_to_be_sent)))
 }
 
 pub enum IrcServiceQueryCommands {
@@ -575,6 +747,69 @@ pub enum IrcOptionalFeatures {
     ISON,
 }
 
+#[derive(Debug)]
+pub struct IrcInvalidChannelOperation(String);
+impl IrcInvalidChannelOperation {
+    pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
+        let mut parser = alt((
+            invalid_join_channel_parser,
+            invalid_join_channel_parser, // valid_leave_channel_parser,
+        ));
+        parser.parse(input)
+    }
+    pub fn handle_command(command: &str) -> Result<String, &str> {
+        match IrcInvalidChannelOperation::irc_command_parser(command) {
+            Ok((_rem, valid_commmand)) => Ok(format!("{}", valid_commmand)),
+            Err(e) => Err("{e}"),
+        }
+    }
+}
+impl Display for IrcInvalidChannelOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub fn invalid_join_channel_parser(input: &str) -> IResult<&str, IrcInvalidChannelOperation> {
+    let (rem, _) = tag_no_case("JOIN").parse(input)?;
+    Ok((
+        rem,
+        IrcInvalidChannelOperation(format!(
+            "{} JOIN :{}",
+            ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR
+        )),
+    ))
+}
+
+pub struct IrcUnknownCommand(String);
+impl IrcUnknownCommand {
+    pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
+        unknwon_command_parser(input)
+    }
+    pub fn handle_command(command: &str) -> Result<String, &str> {
+        match IrcUnknownCommand::irc_command_parser(command) {
+            Ok((_rem, valid_commmand)) => Ok(format!("{}", valid_commmand)),
+            Err(e) => Err("{e}"),
+        }
+    }
+}
+impl Display for IrcUnknownCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub fn unknwon_command_parser(input: &str) -> IResult<&str, IrcUnknownCommand> {
+    let (rem, command) = take_till(|c| c == ' ').parse(input)?;
+    Ok((
+        rem,
+        IrcUnknownCommand(format!(
+            "{} * {} :{}",
+            ERR_UNKNOWNCOMMAND_NB, command, ERR_UNKNOWNCOMMAND_STR
+        )),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,7 +823,7 @@ mod tests {
         assert!(rem == "");
         assert_eq!(
             password,
-            IrcConnectionRegistration::PASS("secretpasswordhere".to_string())
+            IrcConnectionRegistration::PASS("secretpasswordhere".to_owned())
         );
         let input = "PASS  ";
         assert!(valid_password_message_parser(input).is_err(), "no password");
@@ -606,7 +841,7 @@ mod tests {
         let input = "NICK Wiz";
         let (rem, nickname) = valid_nick_message_parser(input).unwrap();
         assert!(rem == "");
-        assert_eq!(nickname, IrcConnectionRegistration::NICK("Wiz".to_string()));
+        assert_eq!(nickname, IrcConnectionRegistration::NICK("Wiz".to_owned()));
         let input = "NICK  ";
         assert!(valid_nick_message_parser(input).is_err(), "no nickname");
         let input = "NICK";
@@ -630,22 +865,14 @@ mod tests {
         assert!(rem == "");
         assert_eq!(
             nickname,
-            IrcConnectionRegistration::USER(
-                "guest".to_string(),
-                0_u32,
-                "Ronnie Reagan".to_string()
-            )
+            IrcConnectionRegistration::USER("guest".to_owned(), 0_u32, "Ronnie Reagan".to_owned())
         );
         let input = "USER guest 8 * :Ronnie Reagan";
         let (rem, nickname) = valid_user_message_parser(input).unwrap();
         assert!(rem == "");
         assert_eq!(
             nickname,
-            IrcConnectionRegistration::USER(
-                "guest".to_string(),
-                8_u32,
-                "Ronnie Reagan".to_string()
-            )
+            IrcConnectionRegistration::USER("guest".to_owned(), 8_u32, "Ronnie Reagan".to_owned())
         );
         let input = "USER guest * :Ronnie Reagan";
         assert!(valid_user_message_parser(input).is_err(), "missing mode");
@@ -662,7 +889,7 @@ mod tests {
         assert!(rem == "");
         assert_eq!(
             nickname,
-            IrcConnectionRegistration::OPER("foo".to_string(), "bar".to_string())
+            IrcConnectionRegistration::OPER("foo".to_owned(), "bar".to_owned())
         );
         let input = "OPER foo ";
         // dbg!(valid_oper_message_parser(input));
@@ -687,21 +914,21 @@ mod tests {
         let (rem, mode) = valid_mode_message_parser(input).unwrap();
         assert_eq!(
             mode,
-            IrcConnectionRegistration::MODE("Wiz".to_string(), vec![('-', vec!['w'])])
+            IrcConnectionRegistration::MODE("Wiz".to_owned(), vec![('-', vec!['w'])])
         );
         assert!(rem == "");
         let input = "MODE Wiz -ow";
         let (rem, mode) = valid_mode_message_parser(input).unwrap();
         assert_eq!(
             mode,
-            IrcConnectionRegistration::MODE("Wiz".to_string(), vec![('-', vec!['o', 'w'])])
+            IrcConnectionRegistration::MODE("Wiz".to_owned(), vec![('-', vec!['o', 'w'])])
         );
         assert!(rem == "");
         let input = "MODE WiZ +w";
         let (rem, mode) = valid_mode_message_parser(input).unwrap();
         assert_eq!(
             mode,
-            IrcConnectionRegistration::MODE("WiZ".to_string(), vec![('+', vec!['w'])])
+            IrcConnectionRegistration::MODE("WiZ".to_owned(), vec![('+', vec!['w'])])
         );
         assert!(rem == "");
         let input = "MODE Bob +i-o";
@@ -709,7 +936,7 @@ mod tests {
         assert_eq!(
             mode,
             IrcConnectionRegistration::MODE(
-                "Bob".to_string(),
+                "Bob".to_owned(),
                 vec![('+', vec!['i']), ('-', vec!['o'])]
             )
         );

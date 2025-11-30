@@ -8,6 +8,10 @@ edition.workspace = true
 name = "irc_server"
 
 [dependencies]
+anyhow = "1.0.100"
+dashmap = "5"
+flexi_logger = "0.31.7"
+log = "0.4.28"
 nom = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

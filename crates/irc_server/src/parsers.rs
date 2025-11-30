@@ -2,9 +2,9 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, take_while, take_while_m_n, take_while1},
-    character::complete::satisfy,
+    character::complete::{char, satisfy},
     combinator::{opt, recognize, verify},
-    multi::{count, many0},
+    multi::{count, many0, separated_list1},
     sequence::{pair, preceded},
 };
 
@@ -38,6 +38,8 @@ use nom::{
 //  g.   trailing   =  *( ":" / " " / nospcrlfcl )
 
 //  h.   wildcards = 3.3.1 Private messages [...] Wildcards are the  '*' and '?'  characters.
+
+//  i.   masks
 fn is_nospcrlfcl(c: u8) -> bool {
     match c {
         0x01..=0x09 | 0x0B..=0x0C | 0x0E..=0x1F | 0x21..=0x39 | 0x3B..=0xFF => true,
@@ -304,15 +306,76 @@ pub fn nickname_parser(input: &str) -> IResult<&str, &str> {
 
 // 12.  targetmask =  ( "$" / "#" ) mask
 //                   ; see details on allowed masks in section 3.3.1
-fn mask_parser(input: &str) -> IResult<&str, &str> {
-    // Placeholder — ask me if you need full mask rules!
-    take_while1(|c: char| c != ' ' && c != ',')(input)
+// fn mask_parser(input: &str) -> IResult<&str, &str> {
+//     // Placeholder — ask me if you need full mask rules!
+//     take_while1(|c: char| c != ' ' && c != ',')(input)
+// }
+/// Checks if a character is a valid mask character according to RFC 2812.
+/// Must be:
+/// 1. Not NUL, CR, LF (standard line endings)
+/// 2. Not Space, Comma, or Colon (standard IRC parameter delimiters)
+/// 3. Not a Dot (since this function defines the *segments* between dots)
+fn is_valid_mask_segment_char(c: char) -> bool {
+    c != '\0'
+        && c != '\r'
+        && c != '\n'
+        && c != ' '
+        && c != ','
+        && c != ':'
+        && c != '.'
+        && c.is_ascii()
 }
 
-pub fn targetmask_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize(pair(alt((tag("$"), tag("#"))), mask_parser));
-    parser.parse(input)
+/// Checks if a character is a valid wildcard: '*' or '?'
+fn is_wildcard(c: char) -> bool {
+    c == '*' || c == '?'
 }
+
+/// Parses a single, structurally valid segment of the mask (sequence of characters not including dots).
+/// It ensures that all characters comply with general IRC parameter rules.
+fn mask_segment(input: &str) -> IResult<&str, &str> {
+    // Matches one or more characters that are valid for an IRC mask segment.
+    take_while1(is_valid_mask_segment_char)(input)
+}
+
+/// **Constraints:**
+/// 1. Must contain at least one "." (period).
+/// 2. Must not contain any wildcards ('*' or '?') following the last ".".
+pub fn targetmask_parser(input: &str) -> IResult<&str, &str> {
+    // 1. Structure Check: Parse the mask as segments separated by dots.
+    // We use recognize to get the full matched string slice, which is guaranteed
+    // to be structurally correct (segments separated by dots) and free of disallowed IRC chars.
+    let (rem, full_mask) =         // 2. Semantic Check: Apply the two RFC constraints using `verify`.
+        verify(
+            recognize(separated_list1(char('.'), mask_segment)),
+            |mask_str: &str| {
+                // Constraint 1: Must contain at least one dot.
+                // `separated_list1` already enforces this, but a direct check is fine.
+                let has_dot = mask_str.contains('.');
+
+                // // Constraint 2: No wildcards after the last dot.
+                let is_last_segment_valid = match mask_str.rfind('.') {
+                    Some(index) => {
+                        let post_dot_segment = &mask_str[index + 1..];
+                        // Check if *any* character in the segment is a wildcard.
+                        !post_dot_segment.chars().any(is_wildcard)
+                    }
+                    None => false, // Should be unreachable if has_dot is true, but safe.
+                };
+
+                // Both constraints must be true for a valid RFC 2812 host/server mask.
+                has_dot && is_last_segment_valid
+                // false
+            },
+        )
+        .parse(input)?;
+    Ok((rem, full_mask))
+}
+
+// pub fn targetmask_parser(input: &str) -> IResult<&str, &str> {
+//     let mut parser = recognize(pair(alt((tag("$"), tag("#"))), mask_parser));
+//     parser.parse(input)
+// }
 
 // 13.  chanstring =  %x01-07 / %x08-09 / %x0B-0C / %x0E-1F / %x21-2B
 //      chanstring =/ %x2D-39 / %x3B-FF
@@ -507,3 +570,37 @@ mod tests {
         assert!(user_parser("\x40").is_err()); // '@'
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+
+//     #[test]
+//     fn test_valid_masks_final() {
+//         assert_eq!(rfc2812_mask_final("*.foo.com"), Ok(("", "*.foo.com")));
+//         assert_eq!(rfc2812_mask_final("a-b.c@d"), Ok(("", "a-b.c@d")));
+//         assert_eq!(rfc2812_mask_final("?user@host.domain"), Ok(("", "?user@host.domain")));
+//     }
+
+//     #[test]
+//     fn test_invalid_masks_no_dot_final() {
+//         // Fails: no dot present.
+//         assert!(rfc2812_mask_final("abc").is_err());
+//     }
+
+//     #[test]
+//     fn test_invalid_masks_wildcard_after_last_dot_final() {
+//         // Fails: wildcard after the last dot.
+//         assert!(rfc2812_mask_final("a.b*").is_err());
+//     }
+
+//     #[test]
+//     fn test_invalid_masks_disallowed_chars() {
+//         // Fails: contains a space (disallowed by is_valid_mask_segment_char).
+//         assert!(rfc2812_mask_final("a.b c").is_err());
+//         // Fails: contains a comma (disallowed by is_valid_mask_segment_char).
+//         assert!(rfc2812_mask_final("a,b.c").is_err());
+//         // Fails: contains a colon (disallowed by is_valid_mask_segment_char).
+//         assert!(rfc2812_mask_final("a.b:c").is_err());
+//     }
+// }
