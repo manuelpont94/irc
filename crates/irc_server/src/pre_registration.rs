@@ -1,3 +1,4 @@
+use super::errors::IrcError;
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -7,6 +8,7 @@ use nom::{
     multi::{many1, separated_list1},
     sequence::{pair, preceded},
 };
+
 // CAP            = "CAP" SP cap-subcmd [SP cap-params]
 // cap-subcmd     = "LS" / "LIST" / "REQ" / "ACK" / "NAK" / "CLEAR" / "END"
 // cap-params     = 1*(cap-token / cap-version / cap-list)
@@ -39,7 +41,7 @@ pub const IRC_SERVER_CAP_ECHO_MESSAGE: bool = false;
 #[derive(Debug, PartialEq)]
 pub enum IrcCapPreRegistration {
     LS,
-    LIST(String),
+    LIST,
     REQ(String),
     ACK(String),
     NACK(String),
@@ -49,17 +51,18 @@ pub enum IrcCapPreRegistration {
 
 impl IrcCapPreRegistration {
     pub fn irc_cap_parser(input: &str) -> IResult<&str, Self> {
-        let mut parser = alt((valid_cap_ls, valid_cap_ls));
+        let mut parser = alt((valid_cap_ls, valid_cap_list));
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str, user: &str) -> Result<String, String> {
+    pub fn handle_command(command: &str, user: &str) -> Result<String, IrcError> {
         match IrcCapPreRegistration::irc_cap_parser(command) {
             Ok((_, valid_cap)) => match valid_cap {
                 IrcCapPreRegistration::LS => Ok(handle_cap_ls_response(user)),
+                IrcCapPreRegistration::LIST => Ok(handle_cap_list_response(user)),
                 _ => todo!(),
             },
-            Err(e) => Err(format!("{}", e.to_owned())),
+            Err(e) => Err(IrcError::IrcCapPreRegistration(format!("{}", e.to_owned()))),
         }
     }
 }
@@ -120,6 +123,23 @@ fn valid_cap_ls(input: &str) -> IResult<&str, IrcCapPreRegistration> {
 // 3.2 CAP LIST
 // Client → server.
 // Server returns the list of capabilities currently active for this client.
+
+fn handle_cap_list_response(user: &str) -> String {
+    format!(
+        "CAP {} LIST :{}{}{}",
+        user,
+        handle_sasl(),
+        handle_echo_message(),
+        handle_multi_prefix()
+    )
+    // :server CAP * LS :chghost echo-message extended-join invite-notify
+    // :server CAP * LS :message-tags multi-prefix sasl
+}
+
+fn valid_cap_list(input: &str) -> IResult<&str, IrcCapPreRegistration> {
+    let (rem, _parsed) = recognize(tag_no_case("CAP LIST")).parse(input)?;
+    Ok((rem, IrcCapPreRegistration::LIST))
+}
 
 // 3.3 CAP REQ <capabilities>
 // Client → server.
