@@ -1,4 +1,3 @@
-use super::errors::IrcError;
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -8,7 +7,6 @@ use nom::{
     multi::{many1, separated_list1},
     sequence::{pair, preceded},
 };
-
 // CAP            = "CAP" SP cap-subcmd [SP cap-params]
 // cap-subcmd     = "LS" / "LIST" / "REQ" / "ACK" / "NAK" / "CLEAR" / "END"
 // cap-params     = 1*(cap-token / cap-version / cap-list)
@@ -46,23 +44,24 @@ pub enum IrcCapPreRegistration {
     ACK(String),
     NACK(String),
     CLEAR(String),
-    END(String),
+    END,
 }
 
 impl IrcCapPreRegistration {
     pub fn irc_cap_parser(input: &str) -> IResult<&str, Self> {
-        let mut parser = alt((valid_cap_ls, valid_cap_list));
+        let mut parser = alt((valid_cap_ls, valid_cap_list, valid_cap_end));
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str, user: &str) -> Result<String, IrcError> {
+    pub fn handle_command(command: &str, user: &str) -> Result<String, String> {
         match IrcCapPreRegistration::irc_cap_parser(command) {
             Ok((_, valid_cap)) => match valid_cap {
                 IrcCapPreRegistration::LS => Ok(handle_cap_ls_response(user)),
                 IrcCapPreRegistration::LIST => Ok(handle_cap_list_response(user)),
+                IrcCapPreRegistration::END => Ok(handle_cap_end_response()),
                 _ => todo!(),
             },
-            Err(e) => Err(IrcError::IrcCapPreRegistration(format!("{}", e.to_owned()))),
+            Err(e) => Err(format!("{}", e.to_owned())),
         }
     }
 }
@@ -137,7 +136,11 @@ fn handle_cap_list_response(user: &str) -> String {
 }
 
 fn valid_cap_list(input: &str) -> IResult<&str, IrcCapPreRegistration> {
-    let (rem, _parsed) = recognize(tag_no_case("CAP LIST")).parse(input)?;
+    let (rem, _parsed) = recognize((
+        tag_no_case("CAP LIST"),
+        take_till(|c| c == '\r' || c == '\n'),
+    ))
+    .parse(input)?;
     Ok((rem, IrcCapPreRegistration::LIST))
 }
 
@@ -170,6 +173,18 @@ fn valid_cap_list(input: &str) -> IResult<&str, IrcCapPreRegistration> {
 // Client → server.
 // Ends negotiation.
 // After this, client typically expects start of normal IRC registration.
+fn handle_cap_end_response() -> String {
+    "".to_string()
+}
+
+fn valid_cap_end(input: &str) -> IResult<&str, IrcCapPreRegistration> {
+    let (rem, _parsed) = recognize((
+        tag_no_case("CAP END"),
+        take_till(|c| c == '\r' || c == '\n'),
+    ))
+    .parse(input)?;
+    Ok((rem, IrcCapPreRegistration::END))
+}
 
 //     +-------------------------+
 //     |       Disconnected      |

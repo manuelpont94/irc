@@ -1,12 +1,11 @@
 use nom::{
     IResult, Parser,
     branch::alt,
-    bytes::complete::{tag, take_while, take_while_m_n, take_while1},
-    character::complete::{alpha1, alphanumeric0, digit0, digit1, one_of, satisfy},
-    combinator::{map, recognize, verify},
-    multi::{count, many0},
-    sequence::{pair, preceded, tuple},
+    bytes::complete::{tag, tag_no_case},
+    sequence::preceded,
 };
+
+use crate::parsers::{msgtarget_parser, targetmask_parser, trailing_parser};
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -74,4 +73,58 @@ impl FromStr for Message {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         todo!()
     }
+}
+
+pub enum IrcMessageSending {
+    PRIVMSG(String, String),
+
+    NOTICE,
+    MOTD,
+    VERSION,
+    STATS,
+    LINKS,
+    TIME,
+    CONNECT,
+    TRACE,
+    ADMIN,
+    INFO,
+}
+
+impl IrcMessageSending {
+    pub fn irc_message_sending_parser(input: &str) -> IResult<&str, Self> {
+        let mut parser = alt((valid_privmsg_message_parser,));
+        parser.parse(input)
+    }
+}
+
+// 3.3.1 Private messages
+
+//       Command: PRIVMSG
+//    Parameters: <msgtarget> <text to be sent>
+
+//    PRIVMSG is used to send private messages between users, as well as to
+//    send messages to channels.  <msgtarget> is usually the nickname of
+//    the recipient of the message, or a channel name.
+
+//    The <msgtarget> parameter may also be a host mask (#<mask>) or server
+//    mask ($<mask>).  In both cases the server will only send the PRIVMSG
+//    to those who have a server or host matching the mask.  The mask MUST
+//    have at least 1 (one) "." in it and no wildcards following the last
+//    ".".  This requirement exists to prevent people sending messages to
+//    "#*" or "$*", which would broadcast to all users.  Wildcards are the
+//    '*' and '?'  characters.  This extension to the PRIVMSG command is
+//    only available to operators.
+
+fn valid_privmsg_message_parser(input: &str) -> IResult<&str, IrcMessageSending> {
+    let (rem, (mstarget, text_to_be_sent)) = (preceded(
+        tag_no_case("PRIVMSG "),
+        (
+            alt((msgtarget_parser, targetmask_parser)),
+            preceded(tag(" :"), trailing_parser),
+        ),
+    ))
+    .parse(input)?;
+    let mstarget = mstarget.to_owned();
+    let text_to_be_sent = text_to_be_sent.to_owned();
+    Ok((rem, IrcMessageSending::PRIVMSG(mstarget, text_to_be_sent)))
 }

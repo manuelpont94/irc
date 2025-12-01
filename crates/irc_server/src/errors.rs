@@ -8,4 +8,7 @@ pub enum IrcError {
 
     #[error("CAP Pre-Registration error: '{0}'")]
     IrcCapPreRegistration(String),
+
+    #[error("Connection Registration error: '{0}'")]
+    IrcConnectionRegistrationError(String),
 }
