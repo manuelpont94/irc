@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     constants::{ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR},
+    errors::IrcError,
     parsers::{
         channel_parser, key_parser, nickname_parser, target_parser, trailing_parser, user_parser,
         wildcards_parser,
@@ -44,10 +45,10 @@ impl IrcChannelOperation {
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str) -> Result<String, &str> {
+    pub fn handle_command(command: &str) -> Result<Option<String>, IrcError> {
         match IrcChannelOperation::irc_command_parser(command) {
             Ok(valid_commmand) => todo!(),
-            Err(e) => Err("{e}"),
+            Err(e) => Err(IrcError::IrcChannelOperations(format!("{}", e.to_owned()))),
         }
     }
 }
@@ -380,10 +381,10 @@ impl IrcInvalidChannelOperation {
         ));
         parser.parse(input)
     }
-    pub fn handle_command(command: &str) -> Result<String, &str> {
+    pub fn handle_command(command: &str) -> Result<Option<String>, IrcError> {
         match IrcInvalidChannelOperation::irc_command_parser(command) {
-            Ok((_rem, valid_commmand)) => Ok(format!("{}", valid_commmand)),
-            Err(e) => Err("{e}"),
+            Ok((_rem, valid_commmand)) => Ok(Some(format!("{}", valid_commmand))),
+            Err(e) => Err(IrcError::InvalidCommand),
         }
     }
 }

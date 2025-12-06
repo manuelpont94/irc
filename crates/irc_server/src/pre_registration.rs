@@ -7,6 +7,8 @@ use nom::{
     multi::{many1, separated_list1},
     sequence::{pair, preceded},
 };
+
+use crate::{errors::IrcError, handlers::registration::*};
 // CAP            = "CAP" SP cap-subcmd [SP cap-params]
 // cap-subcmd     = "LS" / "LIST" / "REQ" / "ACK" / "NAK" / "CLEAR" / "END"
 // cap-params     = 1*(cap-token / cap-version / cap-list)
@@ -32,10 +34,6 @@ use nom::{
 // setname: clients can change realname via SETNAME
 // userhost-in-names: include full user@host in NAMES list
 
-pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;
-pub const IRC_SERVER_CAP_SASL: bool = false;
-pub const IRC_SERVER_CAP_ECHO_MESSAGE: bool = false;
-
 #[derive(Debug, PartialEq)]
 pub enum IrcCapPreRegistration {
     LS,
@@ -53,7 +51,7 @@ impl IrcCapPreRegistration {
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str, user: &str) -> Result<String, String> {
+    pub fn handle_command(command: &str, user: &str) -> Result<Option<String>, IrcError> {
         match IrcCapPreRegistration::irc_cap_parser(command) {
             Ok((_, valid_cap)) => match valid_cap {
                 IrcCapPreRegistration::LS => Ok(handle_cap_ls_response(user)),
@@ -61,7 +59,7 @@ impl IrcCapPreRegistration {
                 IrcCapPreRegistration::END => Ok(handle_cap_end_response()),
                 _ => todo!(),
             },
-            Err(e) => Err(format!("{}", e.to_owned())),
+            Err(e) => Err(IrcError::InvalidCommand),
         }
     }
 }
@@ -74,45 +72,6 @@ impl IrcCapPreRegistration {
 // C: CAP LS 302
 // S: CAP * LS :sasl multi-prefix echo-message
 
-#[inline]
-fn handle_sasl() -> &'static str {
-    let mut sasl = "";
-    if IRC_SERVER_CAP_SASL {
-        sasl = "sasl";
-    }
-    sasl
-}
-
-#[inline]
-fn handle_multi_prefix() -> &'static str {
-    let mut multi_prefix = "";
-    if IRC_SERVER_CAP_MULTI_PREFIX {
-        multi_prefix = "multi-prefix";
-    }
-    multi_prefix
-}
-
-fn handle_echo_message() -> &'static str {
-    let mut echo_message = "";
-
-    if IRC_SERVER_CAP_ECHO_MESSAGE {
-        echo_message = "echo-message";
-    }
-    echo_message
-}
-
-fn handle_cap_ls_response(user: &str) -> String {
-    format!(
-        "CAP {} LS :{}{}{}",
-        user,
-        handle_sasl(),
-        handle_echo_message(),
-        handle_multi_prefix()
-    )
-    // :server CAP * LS :chghost echo-message extended-join invite-notify
-    // :server CAP * LS :message-tags multi-prefix sasl
-}
-
 fn valid_cap_ls(input: &str) -> IResult<&str, IrcCapPreRegistration> {
     let (rem, _parsed) =
         recognize((tag_no_case("CAP LS"), take_till(|c| c == '\r' || c == '\n'))).parse(input)?;
@@ -122,18 +81,6 @@ fn valid_cap_ls(input: &str) -> IResult<&str, IrcCapPreRegistration> {
 // 3.2 CAP LIST
 // Client → server.
 // Server returns the list of capabilities currently active for this client.
-
-fn handle_cap_list_response(user: &str) -> String {
-    format!(
-        "CAP {} LIST :{}{}{}",
-        user,
-        handle_sasl(),
-        handle_echo_message(),
-        handle_multi_prefix()
-    )
-    // :server CAP * LS :chghost echo-message extended-join invite-notify
-    // :server CAP * LS :message-tags multi-prefix sasl
-}
 
 fn valid_cap_list(input: &str) -> IResult<&str, IrcCapPreRegistration> {
     let (rem, _parsed) = recognize((
@@ -173,9 +120,6 @@ fn valid_cap_list(input: &str) -> IResult<&str, IrcCapPreRegistration> {
 // Client → server.
 // Ends negotiation.
 // After this, client typically expects start of normal IRC registration.
-fn handle_cap_end_response() -> String {
-    "".to_string()
-}
 
 fn valid_cap_end(input: &str) -> IResult<&str, IrcCapPreRegistration> {
     let (rem, _parsed) = recognize((

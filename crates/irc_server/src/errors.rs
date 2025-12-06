@@ -11,4 +11,10 @@ pub enum IrcError {
 
     #[error("Connection Registration error: '{0}'")]
     IrcConnectionRegistrationError(String),
+
+    #[error("Channel Operations error: '{0}'")]
+    IrcChannelOperations(String),
+
+    #[error("Invalid Command")]
+    InvalidCommand,
 }

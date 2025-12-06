@@ -3,6 +3,7 @@ pub mod channels_models;
 pub mod commands;
 pub mod constants;
 pub mod errors;
+pub mod handlers;
 pub mod message;
 pub mod parsers;
 pub mod pre_registration;

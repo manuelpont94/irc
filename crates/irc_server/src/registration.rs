@@ -10,6 +10,7 @@ use nom::{
 
 use crate::{
     errors::IrcError,
+    handlers::registration::handle_nick_registration,
     parsers::{host_parser, nickname_parser, trailing_parser, user_parser},
     state::ServerState,
     users::UserState,
@@ -41,20 +42,17 @@ impl IrcConnectionRegistration {
         parser.parse(input)
     }
 
-    pub fn handle_command(
+    pub async fn handle_command(
         command: &str,
         server: &ServerState,
         user: &UserState,
-    ) -> Result<String, IrcError> {
+    ) -> Result<Option<String>, IrcError> {
         match IrcConnectionRegistration::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
-                IrcConnectionRegistration::NICK(nick) => handle_nick_registration(nick),
+                IrcConnectionRegistration::NICK(nick) => handle_nick_registration(nick, user).await,
                 _ => todo!(),
             },
-            Err(e) => Err(IrcError::IrcConnectionRegistrationError(format!(
-                "{}",
-                e.to_owned()
-            ))),
+            Err(e) => Err(IrcError::InvalidCommand),
         }
     }
 }
@@ -84,9 +82,6 @@ fn valid_password_message_parser(input: &str) -> IResult<&str, IrcConnectionRegi
 
 //    NICK command is used to give user a nickname or change the existing
 //    one.
-fn handle_nick_registration(nick: String) -> Result<String, IrcError> {
-    Ok("".to_string())
-}
 
 fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let mut parser = preceded(tag_no_case("NICK "), nickname_parser);

@@ -1,29 +1,10 @@
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
-use dashmap::DashMap;
-use nom::{
-    IResult, Parser,
-    branch::alt,
-    bytes::complete::{tag, tag_no_case, take_till, take_till1, take_while1},
-    character::complete::{char, satisfy, space1},
-    combinator::{Opt, opt, recognize, verify},
-    multi::{many1, separated_list1},
-    sequence::{pair, preceded},
-};
+use nom::{IResult, Parser, bytes::complete::take_till};
 
 use crate::{
-    channels_models::{ChannelName, IrcChannel},
-    constants::{
-        ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR, ERR_UNKNOWNCOMMAND_NB,
-        ERR_UNKNOWNCOMMAND_STR,
-    },
+    constants::{ERR_UNKNOWNCOMMAND_NB, ERR_UNKNOWNCOMMAND_STR},
     errors::IrcError,
-    parsers::{
-        channel_parser, host_parser, key_parser, msgtarget_parser, nickname_parser, target_parser,
-        targetmask_parser, trailing_parser, user_parser, wildcards_parser,
-    },
-    pre_registration::IRC_SERVER_CAP_ECHO_MESSAGE,
-    users::{User, UserId, UserState},
 };
 
 pub enum IrcServiceQueryCommands {
@@ -58,10 +39,13 @@ impl IrcUnknownCommand {
     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
         unknwon_command_parser(input)
     }
-    pub fn handle_command(command: &str) -> Result<String, &str> {
+    pub fn handle_command(command: &str) -> Result<Option<String>, IrcError> {
         match IrcUnknownCommand::irc_command_parser(command) {
-            Ok((_rem, valid_commmand)) => Ok(format!("{}", valid_commmand)),
-            Err(e) => Err("{e}"),
+            Ok((_rem, valid_commmand)) => Ok(Some(format!("{}", valid_commmand))),
+            Err(_) => Err(IrcError::ParsingError(format!(
+                "error during parsing unknown command: '{}'",
+                command
+            ))),
         }
     }
 }
