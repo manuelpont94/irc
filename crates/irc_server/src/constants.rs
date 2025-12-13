@@ -1,3 +1,9 @@
+// 001    RPL_WELCOME
+//               "Welcome to the Internet Relay Network
+//                <nick>!<user>@<host>"
+pub const RPL_WELCOME_NB: u16 = 1;
+pub const RPL_WELCOME_STR: &'static str = "Welcome to the Internet Relay Network";
+
 //    421    ERR_UNKNOWNCOMMAND
 //           "<command> :Unknown command"
 pub const ERR_UNKNOWNCOMMAND_NB: u16 = 421;

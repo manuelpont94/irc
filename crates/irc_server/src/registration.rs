@@ -10,7 +10,7 @@ use nom::{
 
 use crate::{
     errors::IrcError,
-    handlers::registration::handle_nick_registration,
+    handlers::registration::{handle_nick_registration, handle_user_registration},
     parsers::{host_parser, nickname_parser, trailing_parser, user_parser},
     state::ServerState,
     users::UserState,
@@ -19,7 +19,7 @@ use crate::{
 pub enum IrcConnectionRegistration {
     PASS(String),                         // with few tests
     NICK(String),                         // with few tests
-    USER(String, u32, String),            // with few tests
+    USER(String, u8, String),             // with few tests
     OPER(String, String),                 // with few tests
     MODE(String, Vec<(char, Vec<char>)>), // with few tests
     SERVICE(String, String, String, String),
@@ -50,9 +50,12 @@ impl IrcConnectionRegistration {
         match IrcConnectionRegistration::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcConnectionRegistration::NICK(nick) => handle_nick_registration(nick, user).await,
+                IrcConnectionRegistration::USER(user_name, mode, full_user_name) => {
+                    handle_user_registration(user_name, mode, full_user_name, user).await
+                }
                 _ => todo!(),
             },
-            Err(e) => Err(IrcError::InvalidCommand),
+            Err(_e) => Err(IrcError::InvalidCommand),
         }
     }
 }
@@ -105,7 +108,12 @@ fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
 //    Modes").
 
 //    The <realname> may contain space characters.
-fn user_mode_parser(input: &str) -> IResult<&str, u32> {
+// Example:
+// USER guest 0 * :Ronnie Reagan   ; User registering themselves with a
+//                                 username of "guest" and real name
+//                                 "Ronnie Reagan".
+
+fn user_mode_parser(input: &str) -> IResult<&str, u8> {
     // take digits
     let (rem, digits) = recognize(take_while1(|c: char| c.is_ascii_digit())).parse(input)?;
 
@@ -370,14 +378,14 @@ mod tests {
         assert!(rem == "");
         assert_eq!(
             nickname,
-            IrcConnectionRegistration::USER("guest".to_owned(), 0_u32, "Ronnie Reagan".to_owned())
+            IrcConnectionRegistration::USER("guest".to_owned(), 0_u8, "Ronnie Reagan".to_owned())
         );
         let input = "USER guest 8 * :Ronnie Reagan";
         let (rem, nickname) = valid_user_message_parser(input).unwrap();
         assert!(rem == "");
         assert_eq!(
             nickname,
-            IrcConnectionRegistration::USER("guest".to_owned(), 8_u32, "Ronnie Reagan".to_owned())
+            IrcConnectionRegistration::USER("guest".to_owned(), 8_u8, "Ronnie Reagan".to_owned())
         );
         let input = "USER guest * :Ronnie Reagan";
         assert!(valid_user_message_parser(input).is_err(), "missing mode");

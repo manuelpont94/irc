@@ -1,4 +1,8 @@
-use crate::{errors::IrcError, users::UserState};
+use crate::{
+    constants::{RPL_WELCOME_NB, RPL_WELCOME_STR},
+    errors::IrcError,
+    users::UserState,
+};
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;
 pub const IRC_SERVER_CAP_SASL: bool = false;
@@ -77,16 +81,38 @@ pub fn handle_cap_end_response() -> Option<String> {
 }
 
 //     3.1.2 Nick message
-
 //       Command: NICK
 //    Parameters: <nickname>
-
 //    NICK command is used to give user a nickname or change the existing
 //    one.
 pub async fn handle_nick_registration(
     nick: String,
-    user: &UserState,
+    user_state: &UserState,
 ) -> Result<Option<String>, IrcError> {
-    user.with_nick(nick).await;
-    Ok(None)
+    user_state.with_nick(nick).await;
+    is_registered(user_state).await
+}
+
+pub async fn handle_user_registration(
+    user_name: String,
+    mode: u8,
+    full_user_name: String,
+    user_state: &UserState,
+) -> Result<Option<String>, IrcError> {
+    user_state.with_user(user_name, full_user_name, mode).await;
+    is_registered(user_state).await
+}
+
+pub async fn is_registered(user_state: &UserState) -> Result<Option<String>, IrcError> {
+    let user_data = user_state.get_caracs().await;
+    let nick = user_data.nick.unwrap();
+    let user = user_data.user.unwrap();
+    let host = user_data.addr;
+    if user_state.is_registered().await {
+        Ok(Some(format!(
+            "{RPL_WELCOME_NB} {RPL_WELCOME_STR} {nick}!{user}@{host}",
+        )))
+    } else {
+        Ok(None)
+    }
 }

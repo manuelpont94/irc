@@ -47,7 +47,9 @@ impl IrcChannelOperation {
 
     pub fn handle_command(command: &str) -> Result<Option<String>, IrcError> {
         match IrcChannelOperation::irc_command_parser(command) {
-            Ok(valid_commmand) => todo!(),
+            Ok((_rem, valid_commmand)) => match valid_commmand {
+                _ => todo!(),
+            },
             Err(e) => Err(IrcError::IrcChannelOperations(format!("{}", e.to_owned()))),
         }
     }
