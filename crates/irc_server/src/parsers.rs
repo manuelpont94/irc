@@ -4,7 +4,7 @@ use nom::{
     bytes::complete::{tag, take_while, take_while_m_n, take_while1},
     character::complete::{char, satisfy},
     combinator::{opt, recognize, verify},
-    multi::{count, many0, separated_list1},
+    multi::{count, many0, many1, separated_list1},
     sequence::{pair, preceded},
 };
 
@@ -215,12 +215,18 @@ pub fn hostname_parser(input: &str) -> IResult<&str, &str> {
 //                 *( letter / digit )
 //                   ; as specified in RFC 1123 [HNAME]
 pub fn shortname_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize((
-        satisfy(|c| c.is_ascii_alphanumeric()), // first char
-        many0(satisfy(|c| c.is_ascii_alphanumeric() || c == '-')),
-        satisfy(|c| c.is_ascii_alphanumeric()), // last char
-    ));
-    parser.parse(input)
+    let mut parser = recognize(many1(satisfy(|c| c.is_ascii_alphanumeric() || c == '-')));
+
+    let (rest, value): (&str, &str) = parser.parse(input)?;
+
+    if value.starts_with('-') || value.ends_with('-') {
+        Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Char,
+        )))
+    } else {
+        Ok((rest, value))
+    }
 }
 
 // 08.  hostaddr   =  ip4addr / ip6addr
@@ -568,6 +574,13 @@ mod tests {
         assert!(user_parser("\x1F").is_ok());
         assert!(user_parser("\x20").is_err()); // space
         assert!(user_parser("\x40").is_err()); // '@'
+    }
+
+    #[test]
+    fn test_shortname_parser() {
+        let input = "testuser";
+        let (rem, res) = shortname_parser(input).unwrap();
+        assert_eq!(res, "testuser".to_owned());
     }
 }
 

@@ -90,7 +90,7 @@ pub async fn handle_nick_registration(
     user_state: &UserState,
 ) -> Result<Option<String>, IrcError> {
     user_state.with_nick(nick).await;
-    is_registered(user_state).await
+    when_registered(user_state).await
 }
 
 pub async fn handle_user_registration(
@@ -100,17 +100,17 @@ pub async fn handle_user_registration(
     user_state: &UserState,
 ) -> Result<Option<String>, IrcError> {
     user_state.with_user(user_name, full_user_name, mode).await;
-    is_registered(user_state).await
+    when_registered(user_state).await
 }
 
-pub async fn is_registered(user_state: &UserState) -> Result<Option<String>, IrcError> {
-    let user_data = user_state.get_caracs().await;
-    let nick = user_data.nick.unwrap();
-    let user = user_data.user.unwrap();
-    let host = user_data.addr;
+pub async fn when_registered(user_state: &UserState) -> Result<Option<String>, IrcError> {
     if user_state.is_registered().await {
+        let user_data = user_state.get_caracs().await;
+        let nick = user_data.nick.unwrap();
+        let user = user_data.user.unwrap();
+        let host = user_data.addr;
         Ok(Some(format!(
-            "{RPL_WELCOME_NB} {RPL_WELCOME_STR} {nick}!{user}@{host}",
+            ":localhost {RPL_WELCOME_NB:03} {nick} {RPL_WELCOME_STR} {nick}!{user}@{host}",
         )))
     } else {
         Ok(None)

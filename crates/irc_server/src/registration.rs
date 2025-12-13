@@ -11,15 +11,20 @@ use nom::{
 use crate::{
     errors::IrcError,
     handlers::registration::{handle_nick_registration, handle_user_registration},
-    parsers::{host_parser, nickname_parser, trailing_parser, user_parser},
+    parsers::{
+        host_parser, hostname_parser, nickname_parser, servername_parser, trailing_parser,
+        user_parser,
+    },
     state::ServerState,
     users::UserState,
 };
+use log::info;
 #[derive(Debug, PartialEq)]
 pub enum IrcConnectionRegistration {
-    PASS(String),                         // with few tests
-    NICK(String),                         // with few tests
-    USER(String, u8, String),             // with few tests
+    PASS(String), // with few tests
+    NICK(String),
+    USER_RFC_1459(String, String),
+    USER_RFC_2812(String, u8, String),    // with few tests
     OPER(String, String),                 // with few tests
     MODE(String, Vec<(char, Vec<char>)>), // with few tests
     SERVICE(String, String, String, String),
@@ -32,7 +37,8 @@ impl IrcConnectionRegistration {
         let mut parser = alt((
             valid_password_message_parser,
             valid_nick_message_parser,
-            valid_user_message_parser,
+            valid_user_message_rfc2812_parser,
+            valid_user_message_rfc1459_parser,
             valid_oper_message_parser,
             valid_mode_message_parser,
             valid_service_message_parser,
@@ -50,8 +56,11 @@ impl IrcConnectionRegistration {
         match IrcConnectionRegistration::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcConnectionRegistration::NICK(nick) => handle_nick_registration(nick, user).await,
-                IrcConnectionRegistration::USER(user_name, mode, full_user_name) => {
+                IrcConnectionRegistration::USER_RFC_2812(user_name, mode, full_user_name) => {
                     handle_user_registration(user_name, mode, full_user_name, user).await
+                }
+                IrcConnectionRegistration::USER_RFC_1459(user_name, full_user_name) => {
+                    handle_user_registration(user_name, 0_u8, full_user_name, user).await
                 }
                 _ => todo!(),
             },
@@ -92,7 +101,52 @@ fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
     Ok((rem, IrcConnectionRegistration::NICK(parsed.to_owned())))
 }
 
-// 3.1.3 User message
+// 4.1.3 User message RFC1459
+
+//       Command: USER
+//    Parameters: <username> <hostname> <servername> <realname>
+
+//    The USER message is used at the beginning of connection to specify
+//    the username, hostname, servername and realname of s new user.  It is
+//    also used in communication between servers to indicate new user
+//    arriving on IRC, since only after both USER and NICK have been
+//    received from a client does a user become registered.
+
+//    Between servers USER must to be prefixed with client's NICKname.
+//    Note that hostname and servername are normally ignored by the IRC
+//    server when the USER command comes from a directly connected client
+//    (for security reasons), but they are used in server to server
+//    communication.  This means that a NICK must always be sent to a
+//    remote server when a new user is being introduced to the rest of the
+//    network before the accompanying USER is sent.
+
+//    It must be noted that realname parameter must be the last parameter,
+//    because it may contain space characters and must be prefixed with a
+//    colon (':') to make sure this is recognised as such.
+
+//    Since it is easy for a client to lie about its username by relying
+//    solely on the USER message, the use of an "Identity Server" is
+//    recommended.  If the host which a user connects from has such a
+//    server enabled the username is set to that as in the reply from the
+//    "Identity Server".
+
+fn valid_user_message_rfc1459_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
+    info!("1459");
+    let (rem, (username, _hostname, _servername, realname)) = ((
+        preceded(tag_no_case("USER "), user_parser),
+        preceded(tag(" "), hostname_parser),
+        preceded(tag(" "), servername_parser), // <unused> (single token)
+        preceded(tag(" :"), trailing_parser),  // realname until end
+    ))
+        .parse(input)?;
+
+    Ok((
+        rem,
+        IrcConnectionRegistration::USER_RFC_1459(username.to_owned(), realname.to_owned()),
+    ))
+}
+
+// 3.1.3 User message RFC2812
 
 //       Command: USER
 //    Parameters: <user> <mode> <unused> <realname>
@@ -125,7 +179,7 @@ fn user_mode_parser(input: &str) -> IResult<&str, u8> {
     Ok((rem, mode))
 }
 
-fn valid_user_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
+fn valid_user_message_rfc2812_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let (rem, (username, mode, _unused, realname)) = ((
         preceded(tag_no_case("USER "), user_parser),
         preceded(tag(" "), user_mode_parser),
@@ -136,7 +190,7 @@ fn valid_user_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
 
     Ok((
         rem,
-        IrcConnectionRegistration::USER(username.to_owned(), mode, realname.to_owned()),
+        IrcConnectionRegistration::USER_RFC_2812(username.to_owned(), mode, realname.to_owned()),
     ))
 }
 
@@ -374,21 +428,32 @@ mod tests {
         // invisible.
 
         let input = "USER guest 0 * :Ronnie Reagan";
-        let (rem, nickname) = valid_user_message_parser(input).unwrap();
+        let (rem, nickname) = valid_user_message_rfc2812_parser(input).unwrap();
         assert!(rem == "");
         assert_eq!(
             nickname,
-            IrcConnectionRegistration::USER("guest".to_owned(), 0_u8, "Ronnie Reagan".to_owned())
+            IrcConnectionRegistration::USER_RFC_2812(
+                "guest".to_owned(),
+                0_u8,
+                "Ronnie Reagan".to_owned()
+            )
         );
         let input = "USER guest 8 * :Ronnie Reagan";
-        let (rem, nickname) = valid_user_message_parser(input).unwrap();
+        let (rem, nickname) = valid_user_message_rfc2812_parser(input).unwrap();
         assert!(rem == "");
         assert_eq!(
             nickname,
-            IrcConnectionRegistration::USER("guest".to_owned(), 8_u8, "Ronnie Reagan".to_owned())
+            IrcConnectionRegistration::USER_RFC_2812(
+                "guest".to_owned(),
+                8_u8,
+                "Ronnie Reagan".to_owned()
+            )
         );
         let input = "USER guest * :Ronnie Reagan";
-        assert!(valid_user_message_parser(input).is_err(), "missing mode");
+        assert!(
+            valid_user_message_rfc2812_parser(input).is_err(),
+            "missing mode"
+        );
     }
 
     #[test]
