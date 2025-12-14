@@ -41,10 +41,7 @@ use nom::{
 
 //  i.   masks
 fn is_nospcrlfcl(c: u8) -> bool {
-    match c {
-        0x01..=0x09 | 0x0B..=0x0C | 0x0E..=0x1F | 0x21..=0x39 | 0x3B..=0xFF => true,
-        _ => false,
-    }
+    matches!(c, 0x01..=0x09 | 0x0B..=0x0C | 0x0E..=0x1F | 0x21..=0x39 | 0x3B..=0xFF)
 }
 
 //  f.   middle     =  nospcrlfcl *( ":" / nospcrlfcl )
@@ -579,7 +576,7 @@ mod tests {
     #[test]
     fn test_shortname_parser() {
         let input = "testuser";
-        let (rem, res) = shortname_parser(input).unwrap();
+        let (_rem, res) = shortname_parser(input).unwrap();
         assert_eq!(res, "testuser".to_owned());
     }
 }

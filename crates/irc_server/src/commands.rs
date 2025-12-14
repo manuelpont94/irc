@@ -4,7 +4,7 @@ use nom::{IResult, Parser, bytes::complete::take_till};
 
 use crate::{
     constants::{ERR_UNKNOWNCOMMAND_NB, ERR_UNKNOWNCOMMAND_STR},
-    errors::IrcError,
+    errors::InternalIrcError,
 };
 
 pub enum IrcServiceQueryCommands {
@@ -39,12 +39,11 @@ impl IrcUnknownCommand {
     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
         unknwon_command_parser(input)
     }
-    pub fn handle_command(command: &str) -> Result<Option<String>, IrcError> {
+    pub fn handle_command(command: &str) -> Result<Option<String>, InternalIrcError> {
         match IrcUnknownCommand::irc_command_parser(command) {
-            Ok((_rem, valid_commmand)) => Ok(Some(format!("{}", valid_commmand))),
-            Err(_) => Err(IrcError::ParsingError(format!(
-                "error during parsing unknown command: '{}'",
-                command
+            Ok((_rem, valid_commmand)) => Ok(Some(format!("{valid_commmand}"))),
+            Err(_) => Err(InternalIrcError::ParsingError(format!(
+                "error during parsing unknown command: '{command}'"
             ))),
         }
     }
@@ -60,8 +59,7 @@ pub fn unknwon_command_parser(input: &str) -> IResult<&str, IrcUnknownCommand> {
     Ok((
         rem,
         IrcUnknownCommand(format!(
-            "{} * {} :{}",
-            ERR_UNKNOWNCOMMAND_NB, command, ERR_UNKNOWNCOMMAND_STR
+            "{ERR_UNKNOWNCOMMAND_NB} * {command} :{ERR_UNKNOWNCOMMAND_STR}",
         )),
     ))
 }

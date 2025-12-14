@@ -1,5 +1,5 @@
 use crate::users::UserId;
-use dashmap::{DashMap, DashSet};
+use dashmap::DashSet;
 
 #[derive(Debug, Clone)]
 pub enum ChannelType {

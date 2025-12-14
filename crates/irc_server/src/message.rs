@@ -54,7 +54,7 @@ impl Prefix {
     //   - `nickname` seul : `alice`
     //   - `nickname@host` : `alice@192.168.1.1`
     //   - `nickname!user@host` : `alice!alice@host.com`
-    pub fn parse(input: &str) -> IResult<&str, &str> {
+    pub fn parse(_input: &str) -> IResult<&str, &str> {
         todo!()
     }
 }
@@ -63,14 +63,14 @@ pub struct Command {}
 pub struct Params {}
 
 pub struct Message {
-    prefix: Option<Prefix>,
-    command: Command,
-    params: Option<Params>,
+    _prefix: Option<Prefix>,
+    _command: Command,
+    _params: Option<Params>,
 }
 impl FromStr for Message {
     type Err = MessageError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(_s: &str) -> Result<Self, Self::Err> {
         todo!()
     }
 }

@@ -1,8 +1,4 @@
-use crate::{
-    constants::{RPL_WELCOME_NB, RPL_WELCOME_STR},
-    errors::IrcError,
-    users::UserState,
-};
+use crate::{errors::InternalIrcError, replies::IrcReply, users::UserState};
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;
 pub const IRC_SERVER_CAP_SASL: bool = false;
@@ -16,56 +12,28 @@ pub const IRC_SERVER_CAP_ECHO_MESSAGE: bool = false;
 // C: CAP LS 302
 // S: CAP * LS :sasl multi-prefix echo-message
 
-#[inline]
-fn handle_sasl() -> &'static str {
-    let mut sasl = "";
-    if IRC_SERVER_CAP_SASL {
-        sasl = "sasl";
-    }
-    sasl
-}
-
-#[inline]
-pub fn handle_multi_prefix() -> &'static str {
-    let mut multi_prefix = "";
-    if IRC_SERVER_CAP_MULTI_PREFIX {
-        multi_prefix = "multi-prefix";
-    }
-    multi_prefix
-}
-
-pub fn handle_echo_message() -> &'static str {
-    let mut echo_message = "";
-
-    if IRC_SERVER_CAP_ECHO_MESSAGE {
-        echo_message = "echo-message";
-    }
-    echo_message
-}
-
-pub fn handle_cap_ls_response(user: &str) -> Option<String> {
-    Some(format!(
-        "CAP {} LS :{}{}{}",
-        user,
-        handle_sasl(),
-        handle_echo_message(),
-        handle_multi_prefix()
+pub fn handle_cap_ls_response(nick: &str) -> Option<String> {
+    Some(crate::replies::get_server_cap_reply(
+        nick,
+        "LS",
+        IRC_SERVER_CAP_SASL,
+        IRC_SERVER_CAP_ECHO_MESSAGE,
+        IRC_SERVER_CAP_MULTI_PREFIX,
     ))
     // :server CAP * LS :chghost echo-message extended-join invite-notify
     // :server CAP * LS :message-tags multi-prefix sasl
 }
-
 // 3.2 CAP LIST
 // Client → server.
 // Server returns the list of capabilities currently active for this client.
 
-pub fn handle_cap_list_response(user: &str) -> Option<String> {
-    Some(format!(
-        "CAP {} LIST :{}{}{}",
-        user,
-        handle_sasl(),
-        handle_echo_message(),
-        handle_multi_prefix()
+pub fn handle_cap_list_response(nick: &str) -> Option<String> {
+    Some(crate::replies::get_server_cap_reply(
+        nick,
+        "LIST",
+        IRC_SERVER_CAP_SASL,
+        IRC_SERVER_CAP_ECHO_MESSAGE,
+        IRC_SERVER_CAP_MULTI_PREFIX,
     ))
     // :server CAP * LS :chghost echo-message extended-join invite-notify
     // :server CAP * LS :message-tags multi-prefix sasl
@@ -88,7 +56,7 @@ pub fn handle_cap_end_response() -> Option<String> {
 pub async fn handle_nick_registration(
     nick: String,
     user_state: &UserState,
-) -> Result<Option<String>, IrcError> {
+) -> Result<Option<String>, InternalIrcError> {
     user_state.with_nick(nick).await;
     when_registered(user_state).await
 }
@@ -98,21 +66,39 @@ pub async fn handle_user_registration(
     mode: u8,
     full_user_name: String,
     user_state: &UserState,
-) -> Result<Option<String>, IrcError> {
+) -> Result<Option<String>, InternalIrcError> {
     user_state.with_user(user_name, full_user_name, mode).await;
     when_registered(user_state).await
 }
 
-pub async fn when_registered(user_state: &UserState) -> Result<Option<String>, IrcError> {
+pub async fn when_registered(user_state: &UserState) -> Result<Option<String>, InternalIrcError> {
     if user_state.is_registered().await {
         let user_data = user_state.get_caracs().await;
         let nick = user_data.nick.unwrap();
         let user = user_data.user.unwrap();
         let host = user_data.addr;
-        Ok(Some(format!(
-            ":localhost {RPL_WELCOME_NB:03} {nick} {RPL_WELCOME_STR} {nick}!{user}@{host}",
-        )))
+        let host_str = format!("{host:?}");
+        Ok(Some(
+            IrcReply::Welcome {
+                nick: &nick,
+                user: &user,
+                host: &host_str,
+            }
+            .format(),
+        ))
     } else {
         Ok(None)
     }
+}
+
+pub async fn handle_mode_registration(
+    nick: String,
+    modes: Vec<(char, Vec<char>)>,
+    user_state: &UserState,
+) -> Result<Option<String>, InternalIrcError> {
+    return match user_state.with_modes(&nick, modes).await {
+        Ok(Some(status)) => Ok(Some(status.format())),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e),
+    };
 }

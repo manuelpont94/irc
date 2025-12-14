@@ -1,20 +1,24 @@
 use thiserror::Error;
 
+#[non_exhaustive]
 #[derive(Error, Debug, Clone)]
-pub enum IrcError {
+pub enum InternalIrcError {
     /// Erreur générique de parsing.
     #[error("Parsing error: '{0}'")]
     ParsingError(String),
 
     #[error("CAP Pre-Registration error: '{0}'")]
-    IrcCapPreRegistration(String),
+    CapPreRegistration(String),
 
     #[error("Connection Registration error: '{0}'")]
-    IrcConnectionRegistrationError(String),
+    ConnectionRegistrationError(String),
 
     #[error("Channel Operations error: '{0}'")]
-    IrcChannelOperations(String),
+    ChannelOperations(String),
 
     #[error("Invalid Command")]
     InvalidCommand,
+
+    #[error("User State error: '{0}'")]
+    StateError(&'static str),
 }

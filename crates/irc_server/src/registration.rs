@@ -9,8 +9,10 @@ use nom::{
 };
 
 use crate::{
-    errors::IrcError,
-    handlers::registration::{handle_nick_registration, handle_user_registration},
+    errors::InternalIrcError,
+    handlers::registration::{
+        handle_mode_registration, handle_nick_registration, handle_user_registration,
+    },
     parsers::{
         host_parser, hostname_parser, nickname_parser, servername_parser, trailing_parser,
         user_parser,
@@ -18,13 +20,15 @@ use crate::{
     state::ServerState,
     users::UserState,
 };
-use log::info;
+
 #[derive(Debug, PartialEq)]
 pub enum IrcConnectionRegistration {
     PASS(String), // with few tests
     NICK(String),
+    #[allow(non_camel_case_types)]
     USER_RFC_1459(String, String),
-    USER_RFC_2812(String, u8, String),    // with few tests
+    #[allow(non_camel_case_types)]
+    USER_RFC_2812(String, u8, String), // with few tests
     OPER(String, String),                 // with few tests
     MODE(String, Vec<(char, Vec<char>)>), // with few tests
     SERVICE(String, String, String, String),
@@ -50,21 +54,26 @@ impl IrcConnectionRegistration {
 
     pub async fn handle_command(
         command: &str,
-        server: &ServerState,
-        user: &UserState,
-    ) -> Result<Option<String>, IrcError> {
+        _server: &ServerState,
+        user_state: &UserState,
+    ) -> Result<Option<String>, InternalIrcError> {
         match IrcConnectionRegistration::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
-                IrcConnectionRegistration::NICK(nick) => handle_nick_registration(nick, user).await,
+                IrcConnectionRegistration::NICK(nick) => {
+                    handle_nick_registration(nick, user_state).await
+                }
                 IrcConnectionRegistration::USER_RFC_2812(user_name, mode, full_user_name) => {
-                    handle_user_registration(user_name, mode, full_user_name, user).await
+                    handle_user_registration(user_name, mode, full_user_name, user_state).await
                 }
                 IrcConnectionRegistration::USER_RFC_1459(user_name, full_user_name) => {
-                    handle_user_registration(user_name, 0_u8, full_user_name, user).await
+                    handle_user_registration(user_name, 0_u8, full_user_name, user_state).await
+                }
+                IrcConnectionRegistration::MODE(nick, modes) => {
+                    handle_mode_registration(nick, modes, user_state).await
                 }
                 _ => todo!(),
             },
-            Err(_e) => Err(IrcError::InvalidCommand),
+            Err(_e) => Err(InternalIrcError::InvalidCommand),
         }
     }
 }
@@ -131,13 +140,12 @@ fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
 //    "Identity Server".
 
 fn valid_user_message_rfc1459_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
-    info!("1459");
-    let (rem, (username, _hostname, _servername, realname)) = ((
+    let (rem, (username, _hostname, _servername, realname)) = (
         preceded(tag_no_case("USER "), user_parser),
         preceded(tag(" "), hostname_parser),
         preceded(tag(" "), servername_parser), // <unused> (single token)
         preceded(tag(" :"), trailing_parser),  // realname until end
-    ))
+    )
         .parse(input)?;
 
     Ok((
@@ -180,12 +188,12 @@ fn user_mode_parser(input: &str) -> IResult<&str, u8> {
 }
 
 fn valid_user_message_rfc2812_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
-    let (rem, (username, mode, _unused, realname)) = ((
+    let (rem, (username, mode, _unused, realname)) = (
         preceded(tag_no_case("USER "), user_parser),
         preceded(tag(" "), user_mode_parser),
         preceded(tag(" "), take_while1(|c: char| !c.is_whitespace())), // <unused> (single token)
         preceded(tag(" :"), trailing_parser),                          // realname until end
-    ))
+    )
         .parse(input)?;
 
     Ok((
@@ -205,7 +213,7 @@ fn valid_user_message_rfc2812_parser(input: &str) -> IResult<&str, IrcConnection
 //    message (see section 3.1.5) indicating the new user modes.
 
 fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
-    let (rem, (name, password)) = ((
+    let (rem, (name, password)) = (
         preceded(
             tag_no_case("OPER "),
             take_while1(|c: char| !c.is_whitespace()),
@@ -214,7 +222,7 @@ fn valid_oper_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
             preceded(space1, take_till(|c| c == '\n' || c == '\r')),
             |s: &str| !s.is_empty(),
         ),
-    ))
+    )
         .parse(input)?;
 
     Ok((
@@ -338,10 +346,10 @@ fn valid_service_message_parser(input: &str) -> IResult<&str, IrcConnectionRegis
 //    acknowledges this by sending an ERROR message to the client.
 // TODO TEST avec recognize et None
 fn valid_quit_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
-    let (rem, parsed) = (preceded(
+    let (rem, parsed) = preceded(
         tag_no_case("QUIT"),
         opt(preceded(tag(" :"), take_till(|c| c == '\n' || c == '\r'))),
-    ))
+    )
     .parse(input)?;
     let parsed = parsed.map(str::to_string);
     Ok((rem, IrcConnectionRegistration::QUIT(parsed)))

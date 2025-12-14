@@ -1,11 +1,9 @@
 use core::net::SocketAddr;
-use log::error;
-use nom::combinator::Opt;
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use tokio::sync::RwLock;
 
-use dashmap::{DashMap, DashSet};
-use tokio::sync::Mutex;
+use crate::errors::InternalIrcError;
+use crate::replies::IrcReply;
 
 const MODE_WALLOPS: u8 = 0b0000_0100; // Bit 2 = mode 'w' (wallops)
 const MODE_INVISIBLE: u8 = 0b0000_1000; // Bit 3 = mode 'i' (invisible)
@@ -23,7 +21,7 @@ pub struct User {
 pub struct Client {
     pub nick: Option<String>,
     pub user: Option<String>,
-    pub mode: Vec<char>,
+    pub modes: HashSet<char>,
     pub full_user_name: Option<String>,
     pub registered: bool,
     pub addr: SocketAddr,
@@ -34,7 +32,7 @@ impl Client {
         Self {
             nick: None,
             user: None,
-            mode: Vec::new(),
+            modes: HashSet::new(),
             full_user_name: None,
             registered: false,
             addr,
@@ -42,6 +40,7 @@ impl Client {
     }
 }
 
+#[derive(Debug)]
 pub struct UserState(Arc<RwLock<Client>>);
 impl UserState {
     pub fn new(addr: SocketAddr) -> Self {
@@ -57,7 +56,7 @@ impl UserState {
         let mut user_data = self.0.write().await;
         user_data.user = Some(user);
         user_data.full_user_name = Some(full_user_name);
-        user_data.mode = UserState::parse_basic_user_mode(mode);
+        user_data.modes = UserState::parse_basic_user_mode(mode);
     }
 
     pub async fn is_registered(&self) -> bool {
@@ -72,13 +71,13 @@ impl UserState {
         }
     }
 
-    fn parse_basic_user_mode(mode: u8) -> Vec<char> {
-        let mut res: Vec<char> = Vec::new();
+    fn parse_basic_user_mode(mode: u8) -> HashSet<char> {
+        let mut res: HashSet<char> = HashSet::new();
         if (mode & MODE_WALLOPS) != 0 {
-            res.push('w');
+            res.insert('w');
         }
         if (mode & MODE_INVISIBLE) != 0 {
-            res.push('i');
+            res.insert('i');
         }
         res
     }
@@ -86,5 +85,57 @@ impl UserState {
     pub async fn get_caracs(&self) -> Client {
         let user_data = self.0.read().await;
         user_data.clone()
+    }
+
+    pub async fn with_modes<'a>(
+        &self,
+        nick: &'a str,
+        modes: Vec<(char, Vec<char>)>,
+    ) -> Result<Option<IrcReply<'a>>, InternalIrcError> {
+        // known_modes :
+        // a - user is flagged as away;
+        // i - marks a users as invisible;
+        // w - user receives wallops;
+        // r - restricted user connection;
+        // o - operator flag;
+        // O - local operator flag;
+        // s - marks a user for receipt of server notices.
+        pub const KNOWN_MODES: [char; 7] = ['a', 'i', 'w', 'r', 'o', 'O', 's'];
+        let modes_are_valid = modes
+            .iter()
+            .all(|(f, ms)| (*f == '-' || *f == '+') && ms.iter().all(|m| KNOWN_MODES.contains(m)));
+        if !modes_are_valid {
+            return Ok(Some(IrcReply::ErrUModeUnknownFlag { nick }));
+        }
+        let mut user_data = self.0.write().await;
+        if !user_data.registered {
+            Err(InternalIrcError::StateError(
+                "Cannot change of an unregistered user",
+            ))
+        } else if user_data.nick != Some(nick.to_owned()) {
+            Ok(Some(IrcReply::ErrUsersDontMatch { nick }))
+        } else {
+            let current_flags = user_data.modes.clone();
+            let mut new_user_mode_flags: HashSet<char> = current_flags.clone();
+            for (flag, inner_modes) in modes {
+                for mode in inner_modes {
+                    match flag {
+                        '+' => {
+                            if !current_flags.contains(&mode) {
+                                new_user_mode_flags.insert(mode);
+                            }
+                        }
+                        '-' => {
+                            if current_flags.contains(&mode) {
+                                new_user_mode_flags.remove(&mode);
+                            }
+                        }
+                        _ => panic!("cannot happened, filtered before"),
+                    }
+                }
+            }
+            user_data.modes = new_user_mode_flags;
+            Ok(None)
+        }
     }
 }

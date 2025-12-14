@@ -8,5 +8,6 @@ pub mod message;
 pub mod parsers;
 pub mod pre_registration;
 pub mod registration;
+pub mod replies;
 pub mod state;
 pub mod users;

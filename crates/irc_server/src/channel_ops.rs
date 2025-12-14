@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
     constants::{ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR},
-    errors::IrcError,
+    errors::InternalIrcError,
     parsers::{
         channel_parser, key_parser, nickname_parser, target_parser, trailing_parser, user_parser,
         wildcards_parser,
@@ -45,12 +45,13 @@ impl IrcChannelOperation {
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str) -> Result<Option<String>, IrcError> {
+    pub fn handle_command(command: &str) -> Result<Option<String>, InternalIrcError> {
         match IrcChannelOperation::irc_command_parser(command) {
-            Ok((_rem, valid_commmand)) => match valid_commmand {
-                _ => todo!(),
-            },
-            Err(e) => Err(IrcError::IrcChannelOperations(format!("{}", e.to_owned()))),
+            Ok((_rem, _valid_commmand)) => todo!(),
+            Err(e) => Err(InternalIrcError::ChannelOperations(format!(
+                "{}",
+                e.to_owned()
+            ))),
         }
     }
 }
@@ -255,7 +256,7 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
 //    Wildcards are allowed in the <target> parameter.
 
 fn valid_names_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
-    let (rem, (_names, params)) = ((
+    let (rem, (_names, params)) = (
         tag_no_case("NAMES"),
         opt(preceded(
             tag(" "),
@@ -264,12 +265,12 @@ fn valid_names_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
                 opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
             ),
         )),
-    ))
+    )
         .parse(input)?;
     let channels = params
         .clone()
         .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
-    let target = params.map(|(_, targ)| targ.map(str::to_owned)).flatten();
+    let target = params.and_then(|(_, targ)| targ.map(str::to_owned));
     // let topic = topic.map(str::to_owned);
     Ok((rem, IrcChannelOperation::NAMES(channels, target)))
 }
@@ -289,7 +290,7 @@ fn valid_names_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
 //    Wildcards are allowed in the <target> parameter.
 
 fn valid_list_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
-    let (rem, (_list, params)) = ((
+    let (rem, (_list, params)) = (
         tag_no_case("LIST"),
         opt(preceded(
             tag(" "),
@@ -298,12 +299,12 @@ fn valid_list_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> 
                 opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
             ),
         )),
-    ))
+    )
         .parse(input)?;
     let channels = params
         .clone()
         .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
-    let target = params.map(|(_, targ)| targ.map(str::to_owned)).flatten();
+    let target = params.and_then(|(_, targ)| targ.map(str::to_owned));
     Ok((rem, IrcChannelOperation::LIST(channels, target)))
 }
 
@@ -383,10 +384,10 @@ impl IrcInvalidChannelOperation {
         ));
         parser.parse(input)
     }
-    pub fn handle_command(command: &str) -> Result<Option<String>, IrcError> {
+    pub fn handle_command(command: &str) -> Result<Option<String>, InternalIrcError> {
         match IrcInvalidChannelOperation::irc_command_parser(command) {
-            Ok((_rem, valid_commmand)) => Ok(Some(format!("{}", valid_commmand))),
-            Err(e) => Err(IrcError::InvalidCommand),
+            Ok((_rem, valid_commmand)) => Ok(Some(format!("{valid_commmand}"))),
+            Err(_e) => Err(InternalIrcError::InvalidCommand),
         }
     }
 }
@@ -401,8 +402,7 @@ pub fn invalid_join_channel_parser(input: &str) -> IResult<&str, IrcInvalidChann
     Ok((
         rem,
         IrcInvalidChannelOperation(format!(
-            "{} JOIN :{}",
-            ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR
+            "{ERR_NEEDMOREPARAMS_NB} JOIN :{ERR_NEEDMOREPARAMS_STR}",
         )),
     ))
 }

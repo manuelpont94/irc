@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use dashmap::DashMap;
+use std::sync::Arc;
 
 use crate::{
     channels_models::{ChannelName, IrcChannel},
@@ -19,5 +18,11 @@ impl ServerState {
             channels: Arc::new(DashMap::<ChannelName, IrcChannel>::new()),
             users: Arc::new(DashMap::<UserId, User>::new()),
         }
+    }
+}
+
+impl Default for ServerState {
+    fn default() -> Self {
+        Self::new()
     }
 }

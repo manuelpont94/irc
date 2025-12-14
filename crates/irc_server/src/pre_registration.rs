@@ -1,14 +1,11 @@
 use nom::{
     IResult, Parser,
     branch::alt,
-    bytes::complete::{tag, tag_no_case, take_till, take_till1, take_while1},
-    character::complete::{char, satisfy, space1},
-    combinator::{Opt, opt, recognize, verify},
-    multi::{many1, separated_list1},
-    sequence::{pair, preceded},
+    bytes::complete::{tag_no_case, take_till},
+    combinator::recognize,
 };
 
-use crate::{errors::IrcError, handlers::registration::*};
+use crate::{errors::InternalIrcError, handlers::registration::*};
 // CAP            = "CAP" SP cap-subcmd [SP cap-params]
 // cap-subcmd     = "LS" / "LIST" / "REQ" / "ACK" / "NAK" / "CLEAR" / "END"
 // cap-params     = 1*(cap-token / cap-version / cap-list)
@@ -51,7 +48,7 @@ impl IrcCapPreRegistration {
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str, user: &str) -> Result<Option<String>, IrcError> {
+    pub fn handle_command(command: &str, user: &str) -> Result<Option<String>, InternalIrcError> {
         match IrcCapPreRegistration::irc_cap_parser(command) {
             Ok((_, valid_cap)) => match valid_cap {
                 IrcCapPreRegistration::LS => Ok(handle_cap_ls_response(user)),
@@ -59,7 +56,7 @@ impl IrcCapPreRegistration {
                 IrcCapPreRegistration::END => Ok(handle_cap_end_response()),
                 _ => todo!(),
             },
-            Err(e) => Err(IrcError::InvalidCommand),
+            Err(_e) => Err(InternalIrcError::InvalidCommand),
         }
     }
 }
