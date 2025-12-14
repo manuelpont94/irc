@@ -1,6 +1,6 @@
 use flexi_logger::{Duplicate, Logger};
 use irc_server::handlers::client::handle_client;
-use irc_server::state::ServerState;
+use irc_server::server_state::ServerState;
 use log::info;
 use tokio::net::TcpListener;
 

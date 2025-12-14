@@ -20,5 +20,8 @@ pub enum InternalIrcError {
     InvalidCommand,
 
     #[error("User State error: '{0}'")]
-    StateError(&'static str),
+    UserStateError(&'static str),
+
+    #[error("Server State error: '{0}'")]
+    ServerStateError(&'static str),
 }

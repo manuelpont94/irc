@@ -4,7 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::request::handle_request;
-use crate::{state::ServerState, users::UserState};
+use crate::{server_state::ServerState, users::UserState};
 
 pub async fn handle_client(mut socket: TcpStream, addr: SocketAddr, server_state: &ServerState) {
     info!("Client connected: {:?}", addr);
@@ -22,6 +22,7 @@ pub async fn handle_client(mut socket: TcpStream, addr: SocketAddr, server_state
             }
         };
         debug!("{user_state:?}");
+        debug!("{server_state:?}");
 
         if let Ok(requests) = decode_utf8(&buf[..n]) {
             for request in requests.lines() {

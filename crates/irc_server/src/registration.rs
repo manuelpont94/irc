@@ -17,7 +17,7 @@ use crate::{
         host_parser, hostname_parser, nickname_parser, servername_parser, trailing_parser,
         user_parser,
     },
-    state::ServerState,
+    server_state::ServerState,
     users::UserState,
 };
 
@@ -54,19 +54,33 @@ impl IrcConnectionRegistration {
 
     pub async fn handle_command(
         command: &str,
-        _server: &ServerState,
+        server_state: &ServerState,
         user_state: &UserState,
     ) -> Result<Option<String>, InternalIrcError> {
         match IrcConnectionRegistration::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcConnectionRegistration::NICK(nick) => {
-                    handle_nick_registration(nick, user_state).await
+                    handle_nick_registration(nick, user_state, server_state).await
                 }
                 IrcConnectionRegistration::USER_RFC_2812(user_name, mode, full_user_name) => {
-                    handle_user_registration(user_name, mode, full_user_name, user_state).await
+                    handle_user_registration(
+                        user_name,
+                        mode,
+                        full_user_name,
+                        user_state,
+                        server_state,
+                    )
+                    .await
                 }
                 IrcConnectionRegistration::USER_RFC_1459(user_name, full_user_name) => {
-                    handle_user_registration(user_name, 0_u8, full_user_name, user_state).await
+                    handle_user_registration(
+                        user_name,
+                        0_u8,
+                        full_user_name,
+                        user_state,
+                        server_state,
+                    )
+                    .await
                 }
                 IrcConnectionRegistration::MODE(nick, modes) => {
                     handle_mode_registration(nick, modes, user_state).await

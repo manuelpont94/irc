@@ -1,4 +1,6 @@
-use crate::{errors::InternalIrcError, replies::IrcReply, users::UserState};
+use crate::{
+    errors::InternalIrcError, replies::IrcReply, server_state::ServerState, users::UserState,
+};
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;
 pub const IRC_SERVER_CAP_SASL: bool = false;
@@ -56,9 +58,10 @@ pub fn handle_cap_end_response() -> Option<String> {
 pub async fn handle_nick_registration(
     nick: String,
     user_state: &UserState,
+    server_state: &ServerState,
 ) -> Result<Option<String>, InternalIrcError> {
     user_state.with_nick(nick).await;
-    when_registered(user_state).await
+    when_registered(user_state, server_state).await
 }
 
 pub async fn handle_user_registration(
@@ -66,18 +69,23 @@ pub async fn handle_user_registration(
     mode: u8,
     full_user_name: String,
     user_state: &UserState,
+    server_state: &ServerState,
 ) -> Result<Option<String>, InternalIrcError> {
     user_state.with_user(user_name, full_user_name, mode).await;
-    when_registered(user_state).await
+    when_registered(user_state, server_state).await
 }
 
-pub async fn when_registered(user_state: &UserState) -> Result<Option<String>, InternalIrcError> {
+pub async fn when_registered(
+    user_state: &UserState,
+    server_state: &ServerState,
+) -> Result<Option<String>, InternalIrcError> {
     if user_state.is_registered().await {
         let user_data = user_state.get_caracs().await;
         let nick = user_data.nick.unwrap();
         let user = user_data.user.unwrap();
         let host = user_data.addr;
         let host_str = format!("{host:?}");
+        server_state.add_connecting_user(user_state).await?;
         Ok(Some(
             IrcReply::Welcome {
                 nick: &nick,

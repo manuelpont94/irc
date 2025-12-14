@@ -4,7 +4,7 @@ use crate::{
     errors::InternalIrcError,
     pre_registration::IrcCapPreRegistration,
     registration::IrcConnectionRegistration,
-    state::ServerState,
+    server_state::ServerState,
     users::UserState,
 };
 

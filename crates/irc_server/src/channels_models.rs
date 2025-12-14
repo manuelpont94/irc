@@ -1,4 +1,3 @@
-use crate::users::UserId;
 use dashmap::DashSet;
 
 #[derive(Debug, Clone)]
@@ -18,11 +17,11 @@ pub struct ChannelModes {
     pub secret: bool,           // +s
     pub topic_lock: bool,       // +t
 
-    pub key: Option<String>,                // +k <key>
-    pub user_limit: Option<u32>,            // +l <count>
-    pub ban_list: DashSet<UserId>,          // +b
-    pub except_list: DashSet<UserId>,       // +e
-    pub invite_exceptions: DashSet<UserId>, // +I
+    pub key: Option<String>,               // +k <key>
+    pub user_limit: Option<u32>,           // +l <count>
+    pub ban_list: DashSet<usize>,          // +b
+    pub except_list: DashSet<usize>,       // +e
+    pub invite_exceptions: DashSet<usize>, // +I
 }
 
 impl Default for ChannelModes {
@@ -52,10 +51,10 @@ pub struct IrcChannel {
     pub kind: ChannelType,
 
     pub topic: Option<String>,
-    pub topic_set_by: Option<UserId>,
+    pub topic_set_by: Option<usize>,
     pub topic_set_at: Option<u64>, // timestamp
 
-    pub members: DashSet<UserId>,   // list of nicknames
+    pub members: DashSet<usize>,    // list of nicknames
     pub operators: DashSet<String>, // '@'
     pub voiced: DashSet<String>,    // '+'
 
