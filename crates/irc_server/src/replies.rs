@@ -67,7 +67,9 @@ pub enum IrcReply<'a> {
     ErrNoSuchChannel {
         channel: &'a str,
     },
-    ErrNotRegistered,
+    ErrNotRegistered {
+        nick: &'a str,
+    },
 }
 
 impl<'a> IrcReply<'a> {
@@ -86,6 +88,9 @@ impl<'a> IrcReply<'a> {
             ),
             IrcReply::ErrUsersDontMatch { nick } => format!(
                 ":{SERVER_NAME} {ERR_USERSDONTMATCH_NB:03} {nick} :{ERR_USERSDONTMATCH_STR}"
+            ),
+            IrcReply::ErrNotRegistered { nick} => format!(
+                ":{SERVER_NAME} {ERR_NOTREGISTERED_NB:03} {nick} :{ERR_NOTREGISTERED_STR}"
             ),
             IrcReply::ErrUnknownCommand { nick, command } => format!(
                 ":{SERVER_NAME} {ERR_UNKNOWNCOMMAND_NB:03} {nick} {command} :{ERR_UNKNOWNCOMMAND_STR}"

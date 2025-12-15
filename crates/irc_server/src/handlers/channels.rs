@@ -6,8 +6,13 @@ pub async fn handle_join_channel(
     server_state: &ServerState,
     user_state: &UserState,
 ) -> Result<Option<String>, InternalIrcError> {
-    if !user_state.is_registered().await {
-        todo!()
+    let caracs = user_state.get_caracs().await;
+    if !caracs.registered {
+        let nick = match caracs.nick {
+            Some(nick) => nick,
+            None => "*".to_owned()
+        };
+        return Ok(Some(crate::replies::IrcReply::ErrNotRegistered { nick: &nick }.format()));
     }
     for channel_name in channels {
         if server_state.channels_exists(channel_name) {
