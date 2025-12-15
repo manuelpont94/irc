@@ -16,12 +16,3 @@ impl IrcMessage {
         }
     }
 }
-
-/// Control message sent from Server Broker to a Client Writer Task
-pub enum SubscriptionControl {
-    Subscribe {
-        channel_name: String,
-        receiver: broadcast::Receiver<IrcMessage>,
-    },
-    Unsubscribe(String),
-}

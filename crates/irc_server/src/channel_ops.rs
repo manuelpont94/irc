@@ -50,13 +50,14 @@ impl IrcChannelOperation {
 
     pub async fn handle_command(
         command: &str,
+        client_id: usize,
         server_state: &ServerState,
         user_state: &UserState,
     ) -> Result<Option<String>, InternalIrcError> {
         match IrcChannelOperation::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcChannelOperation::JOIN(channels, keys) => {
-                    handle_join_channel(channels, keys, server_state, user_state).await
+                    handle_join_channel(channels, keys, client_id, server_state, user_state).await
                 }
                 _ => todo!(),
             },

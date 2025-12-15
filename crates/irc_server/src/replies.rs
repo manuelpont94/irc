@@ -35,6 +35,12 @@ pub enum IrcReply<'a> {
     },
 
     // Channel operations
+    Join {
+        nick: &'a str,
+        user: &'a str,
+        host: &'a str,
+        channel: &'a str,
+    },
     Topic {
         channel: &'a str,
         topic: &'a str,
@@ -80,6 +86,12 @@ impl<'a> IrcReply<'a> {
             } => format!(
                 ":{SERVER_NAME} {RPL_WELCOME_NB:03} {nick} :{RPL_WELCOME_STR} {nick}!{user}@{host}"
             ),
+            IrcReply::Join {
+                nick,
+                user,
+                host,
+                channel,
+            } => format!(":{nick}!{user}@{host} JOIN {channel}"),
             IrcReply::UModeIs { nick, modes } => {
                 format!(":{SERVER_NAME} {RPL_UMODEIS_NB:03} {nick} :{modes}")
             }
@@ -89,9 +101,9 @@ impl<'a> IrcReply<'a> {
             IrcReply::ErrUsersDontMatch { nick } => format!(
                 ":{SERVER_NAME} {ERR_USERSDONTMATCH_NB:03} {nick} :{ERR_USERSDONTMATCH_STR}"
             ),
-            IrcReply::ErrNotRegistered { nick} => format!(
-                ":{SERVER_NAME} {ERR_NOTREGISTERED_NB:03} {nick} :{ERR_NOTREGISTERED_STR}"
-            ),
+            IrcReply::ErrNotRegistered { nick } => {
+                format!(":{SERVER_NAME} {ERR_NOTREGISTERED_NB:03} {nick} :{ERR_NOTREGISTERED_STR}")
+            }
             IrcReply::ErrUnknownCommand { nick, command } => format!(
                 ":{SERVER_NAME} {ERR_UNKNOWNCOMMAND_NB:03} {nick} {command} :{ERR_UNKNOWNCOMMAND_STR}"
             ),

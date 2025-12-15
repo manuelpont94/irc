@@ -2,6 +2,7 @@ use crate::{
     channel_ops::{IrcChannelOperation, IrcInvalidChannelOperation},
     commands::IrcUnknownCommand,
     errors::InternalIrcError,
+    handlers::client,
     pre_registration::IrcCapPreRegistration,
     registration::IrcConnectionRegistration,
     server_state::ServerState,
@@ -10,6 +11,7 @@ use crate::{
 
 pub async fn handle_request(
     request: &str,
+    client_id: usize,
     server: &ServerState,
     user: &UserState,
 ) -> Result<Option<String>, InternalIrcError> {
@@ -23,14 +25,14 @@ pub async fn handle_request(
     }
 
     // 2. Try registration
-    match IrcConnectionRegistration::handle_command(request, server, user).await {
+    match IrcConnectionRegistration::handle_command(request, client_id, server, user).await {
         Ok(ok) => return Ok(ok),
         Err(InternalIrcError::InvalidCommand) => {}
         Err(err) => return Err(err),
     }
 
     // 3. Try normal channel operations
-    match IrcChannelOperation::handle_command(request, server, user).await {
+    match IrcChannelOperation::handle_command(request, client_id, server, user).await {
         Ok(ok) => return Ok(ok),
         Err(InternalIrcError::InvalidCommand) => {}
         Err(err) => return Err(err),

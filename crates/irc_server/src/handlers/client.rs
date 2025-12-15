@@ -6,8 +6,9 @@ use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
 
 use super::request::handle_request;
+use crate::channels_models::{ChannelMessage, SubscriptionControl};
 use crate::errors::InternalIrcError;
-use crate::message_models::{IrcMessage, SubscriptionControl};
+use crate::message_models::IrcMessage;
 use crate::{server_state::ServerState, user_state::UserState};
 
 // Define the size of the personal outbound channel
@@ -47,10 +48,6 @@ pub async fn handle_client(socket: TcpStream, addr: SocketAddr, server_state: &S
     ));
 }
 
-fn decode_utf8(buf: &[u8]) -> Result<&str, std::str::Utf8Error> {
-    std::str::from_utf8(buf)
-}
-
 async fn client_reader_task(
     reader: tokio::io::ReadHalf<TcpStream>,
     client_id: usize,
@@ -63,7 +60,7 @@ async fn client_reader_task(
 
     loop {
         // Asynchronously read one line (ending in \r\n)
-        let bytes_read = match buffered_reader.read_line(&mut line).await {
+        let _bytes_read = match buffered_reader.read_line(&mut line).await {
             Ok(0) | Err(_) => {
                 info!("[{}] Client disconnected.", client_id);
                 // TODO: Handle QUIT/cleanup in ServerState
@@ -77,8 +74,20 @@ async fn client_reader_task(
         info!(">> incoming [{}] # {}", client_id, request);
 
         // This call is now handled inside the Reader task:
-        let response = handle_request(request, &server_state, &user_state).await;
-
+        match handle_request(request, client_id, &server_state, &user_state).await {
+            Ok(Some(response)) => {
+                let irc_message = IrcMessage::new(response);
+                match user_state.tx_outbound.send(irc_message).await {
+                    Ok(_) => (), // all fine
+                    Err(e) => {
+                        error!("Failed to send targeted message: {e}");
+                        break;
+                    }
+                }
+            }
+            Ok(None) => (),
+            Err(e) => error!("Err occured while dealing with request {request} with error {e}"),
+        }
         // The handler's response logic (writing to the socket) must change!
         // Instead of writing to the socket, it must use the outbound channel.
 
@@ -95,13 +104,14 @@ async fn client_writer_task(
     mut rx_control: mpsc::Receiver<SubscriptionControl>, // Channel management
 ) -> Result<(), std::io::Error> {
     // Map to hold dynamic channel broadcast receivers
-    let mut channel_subscriptions: HashMap<String, broadcast::Receiver<IrcMessage>> =
+    let mut channel_subscriptions: HashMap<String, broadcast::Receiver<ChannelMessage>> =
         HashMap::new();
     let mut write_err = false;
 
     loop {
         tokio::select! {
             Some(msg) = rx_outbound.recv() => {
+                info!(">> out [{client_id}] # {}", &msg.raw_line);
                 if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
                     error!("[{}] Failed to write targeted message: {:?}", client_id, e);
                     write_err = true;
@@ -159,6 +169,7 @@ async fn client_writer_task(
         // Write all collected broadcast messages to the socket
         if !messages_to_write.is_empty() {
             for msg in messages_to_write {
+                info!(">> out [{client_id}] # {}", &msg.raw_line);
                 if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
                     error!("[{client_id}] Failed to write broadcast message: {e:?}");
                     write_err = true;

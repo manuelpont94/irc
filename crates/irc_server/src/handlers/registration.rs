@@ -57,6 +57,7 @@ pub fn handle_cap_end_response() -> Option<String> {
 //    one.
 pub async fn handle_nick_registration(
     nick: String,
+    _client_id: usize,
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<Option<String>, InternalIrcError> {
@@ -68,6 +69,7 @@ pub async fn handle_user_registration(
     user_name: String,
     mode: u8,
     full_user_name: String,
+    _client_id: usize,
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<Option<String>, InternalIrcError> {
@@ -102,6 +104,7 @@ pub async fn when_registered(
 pub async fn handle_mode_registration(
     nick: String,
     modes: Vec<(char, Vec<char>)>,
+    _client_id: usize,
     user_state: &UserState,
 ) -> Result<Option<String>, InternalIrcError> {
     return match user_state.with_modes(&nick, modes).await {

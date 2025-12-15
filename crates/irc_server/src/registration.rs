@@ -54,19 +54,21 @@ impl IrcConnectionRegistration {
 
     pub async fn handle_command(
         command: &str,
+        client_id: usize,
         server_state: &ServerState,
         user_state: &UserState,
     ) -> Result<Option<String>, InternalIrcError> {
         match IrcConnectionRegistration::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcConnectionRegistration::NICK(nick) => {
-                    handle_nick_registration(nick, user_state, server_state).await
+                    handle_nick_registration(nick, client_id, user_state, server_state).await
                 }
                 IrcConnectionRegistration::USER_RFC_2812(user_name, mode, full_user_name) => {
                     handle_user_registration(
                         user_name,
                         mode,
                         full_user_name,
+                        client_id,
                         user_state,
                         server_state,
                     )
@@ -77,13 +79,14 @@ impl IrcConnectionRegistration {
                         user_name,
                         0_u8,
                         full_user_name,
+                        client_id,
                         user_state,
                         server_state,
                     )
                     .await
                 }
                 IrcConnectionRegistration::MODE(nick, modes) => {
-                    handle_mode_registration(nick, modes, user_state).await
+                    handle_mode_registration(nick, modes, client_id, user_state).await
                 }
                 _ => todo!(),
             },

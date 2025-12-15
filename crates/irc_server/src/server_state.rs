@@ -9,15 +9,15 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
-    pub channels: Arc<DashMap<String, IrcChannel>>,
-    pub users: Arc<DashMap<usize, UserState>>,
+    pub channels: DashMap<String, IrcChannel>,
+    pub users: DashMap<usize, UserState>,
     // pub registering_users: Arc<DashSet<>>
 }
 impl ServerState {
     pub fn new() -> Self {
         ServerState {
-            channels: Arc::new(DashMap::<ChannelName, IrcChannel>::new()),
-            users: Arc::new(DashMap::<usize, UserState>::new()),
+            channels: DashMap::<ChannelName, IrcChannel>::new(),
+            users: DashMap::<usize, UserState>::new(),
         }
     }
 
@@ -26,20 +26,22 @@ impl ServerState {
         user_state: &UserState,
     ) -> Result<usize, InternalIrcError> {
         let user_id = user_state.get_user_id().await;
-
-        match user_id {
-            Some(id) => {
-                self.users.insert(id, user_state.clone());
-                Ok(id)
-            }
-            None => Err(InternalIrcError::ServerStateError(
-                "Failed to generate user ID",
-            )),
-        }
+        self.users.insert(user_id, user_state.clone());
+        Ok(user_id)
     }
 
-    pub fn channels_exists(&self, channel_name: ChannelName) -> bool {
-        self.channels.contains_key(&channel_name)
+    pub fn channels_exists(&self, channel_name: &str) -> bool {
+        self.channels.contains_key(channel_name)
+    }
+
+    pub fn get_or_create_channel(&self, channel_name: String) -> IrcChannel {
+        if let Some(channel) = self.channels.get(&channel_name) {
+            channel.clone()
+        } else {
+            let channel = IrcChannel::new(channel_name.clone());
+            self.channels.insert(channel_name, channel.clone());
+            channel
+        }
     }
 }
 

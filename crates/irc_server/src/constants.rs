@@ -17,8 +17,8 @@ pub const ERR_UNKNOWNCOMMAND_STR: &str = "Unknown command";
 //          - Returned by the server to indicate that the client
 //            MUST be registered before the server will allow it
 //            to be parsed in detail.
-pub const ERR_NOTREGISTERED_NB : u16 = 451;
-pub const ERR_NOTREGISTERED_STR : &str = ":You have not registered";
+pub const ERR_NOTREGISTERED_NB: u16 = 451;
+pub const ERR_NOTREGISTERED_STR: &str = ":You have not registered";
 
 // 461    ERR_NEEDMOREPARAMS
 //               "<command> :Not enough parameters"

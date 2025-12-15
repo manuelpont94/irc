@@ -1,4 +1,4 @@
-use crate::message_models::SubscriptionControl;
+use crate::channels_models::SubscriptionControl;
 use crate::replies::IrcReply;
 use crate::{errors::InternalIrcError, message_models::IrcMessage};
 use core::net::SocketAddr;
@@ -22,20 +22,18 @@ fn get_next_user_id() -> usize {
 
 #[derive(Debug)]
 pub struct User {
-    pub user_id: Option<usize>,
+    pub user_id: usize,
     pub nick: Option<String>,
     pub user: Option<String>,
     pub modes: HashSet<char>,
     pub full_user_name: Option<String>,
     pub registered: AtomicBool,
     pub addr: SocketAddr,
-    pub tx_outbound: Sender<IrcMessage>,
-    pub tx_control: Sender<SubscriptionControl>,
 }
 
 #[derive(Debug, Clone)]
 pub struct UserSnapshot {
-    pub user_id: Option<usize>,
+    pub user_id: usize,
     pub nick: Option<String>,
     pub user: Option<String>,
     pub modes: HashSet<char>,
@@ -45,47 +43,45 @@ pub struct UserSnapshot {
 }
 
 impl User {
-    pub fn new(
-        addr: SocketAddr,
-        tx_outbound: Sender<IrcMessage>,
-        tx_control: Sender<SubscriptionControl>,
-    ) -> Self {
+    pub fn new(addr: SocketAddr) -> Self {
         Self {
-            user_id: None,
+            user_id: get_next_user_id(),
             nick: None,
             user: None,
             modes: HashSet::new(),
             full_user_name: None,
             registered: AtomicBool::new(false),
             addr,
-            tx_outbound,
-            tx_control,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct UserState(Arc<RwLock<User>>);
+pub struct UserState {
+    pub user: Arc<RwLock<User>>,
+    pub tx_outbound: Sender<IrcMessage>,
+    pub tx_control: Sender<SubscriptionControl>,
+}
 impl UserState {
     pub fn new(
         addr: SocketAddr,
         tx_outbound: Sender<IrcMessage>,
         tx_control: Sender<SubscriptionControl>,
     ) -> Self {
-        UserState(Arc::new(RwLock::new(User::new(
-            addr,
+        UserState {
+            user: Arc::new(RwLock::new(User::new(addr))),
             tx_outbound,
             tx_control,
-        ))))
+        }
     }
 
     pub async fn with_nick(&self, nick: String) {
-        let mut client = self.0.write().await;
+        let mut client = self.user.write().await;
         client.nick = Some(nick);
     }
 
     pub async fn with_user(&self, user: String, full_user_name: String, mode: u8) {
-        let mut user_data = self.0.write().await;
+        let mut user_data = self.user.write().await;
         user_data.user = Some(user);
         user_data.full_user_name = Some(full_user_name);
         user_data.modes = UserState::parse_basic_user_mode(mode);
@@ -94,12 +90,12 @@ impl UserState {
     pub async fn is_registered(&self) -> bool {
         // first check under read lock
         // 🚀 fast path: atomic read
-        if self.0.read().await.registered.load(Ordering::Acquire) {
+        if self.user.read().await.registered.load(Ordering::Acquire) {
             return true;
         }
 
         // slow path: need to check nick/user and maybe register
-        let mut user_data = self.0.write().await;
+        let mut user_data = self.user.write().await;
 
         // double-check under write lock
         if user_data.registered.load(Ordering::Relaxed) {
@@ -111,19 +107,14 @@ impl UserState {
         }
 
         // 👇 first and only registration
-        user_data.user_id = Some(get_next_user_id());
         user_data.registered.store(true, Ordering::Release);
 
         true
     }
 
-    pub async fn get_user_id(&self) -> Option<usize> {
-        if self.is_registered().await {
-            let user_data = self.0.read().await;
-            user_data.user_id
-        } else {
-            None
-        }
+    pub async fn get_user_id(&self) -> usize {
+        let user_data = self.user.read().await;
+        user_data.user_id
     }
 
     fn parse_basic_user_mode(mode: u8) -> HashSet<char> {
@@ -138,7 +129,7 @@ impl UserState {
     }
 
     pub async fn get_caracs(&self) -> UserSnapshot {
-        let user_data = self.0.read().await;
+        let user_data = self.user.read().await;
         UserSnapshot {
             user_id: user_data.user_id,
             nick: user_data.nick.clone(),
@@ -170,7 +161,7 @@ impl UserState {
         if !modes_are_valid {
             return Ok(Some(IrcReply::ErrUModeUnknownFlag { nick }));
         }
-        let mut user_data = self.0.write().await;
+        let mut user_data = self.user.write().await;
         if !user_data.registered.load(Ordering::Acquire) {
             Err(InternalIrcError::UserStateError(
                 "Cannot change of an unregistered user",
@@ -201,4 +192,6 @@ impl UserState {
             Ok(None)
         }
     }
+
+    // pub async fn send
 }
