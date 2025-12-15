@@ -1,12 +1,13 @@
+use crate::message_models::SubscriptionControl;
+use crate::replies::IrcReply;
+use crate::{errors::InternalIrcError, message_models::IrcMessage};
 use core::net::SocketAddr;
 use std::{
     collections::HashSet,
     sync::{Arc, atomic::AtomicBool},
 };
 use tokio::sync::RwLock;
-
-use crate::errors::InternalIrcError;
-use crate::replies::IrcReply;
+use tokio::sync::mpsc::Sender;
 
 const MODE_WALLOPS: u8 = 0b0000_0100; // Bit 2 = mode 'w' (wallops)
 const MODE_INVISIBLE: u8 = 0b0000_1000; // Bit 3 = mode 'i' (invisible)
@@ -28,6 +29,8 @@ pub struct User {
     pub full_user_name: Option<String>,
     pub registered: AtomicBool,
     pub addr: SocketAddr,
+    pub tx_outbound: Sender<IrcMessage>,
+    pub tx_control: Sender<SubscriptionControl>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,7 +45,11 @@ pub struct UserSnapshot {
 }
 
 impl User {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(
+        addr: SocketAddr,
+        tx_outbound: Sender<IrcMessage>,
+        tx_control: Sender<SubscriptionControl>,
+    ) -> Self {
         Self {
             user_id: None,
             nick: None,
@@ -51,6 +58,8 @@ impl User {
             full_user_name: None,
             registered: AtomicBool::new(false),
             addr,
+            tx_outbound,
+            tx_control,
         }
     }
 }
@@ -58,8 +67,16 @@ impl User {
 #[derive(Debug, Clone)]
 pub struct UserState(Arc<RwLock<User>>);
 impl UserState {
-    pub fn new(addr: SocketAddr) -> Self {
-        UserState(Arc::new(RwLock::new(User::new(addr))))
+    pub fn new(
+        addr: SocketAddr,
+        tx_outbound: Sender<IrcMessage>,
+        tx_control: Sender<SubscriptionControl>,
+    ) -> Self {
+        UserState(Arc::new(RwLock::new(User::new(
+            addr,
+            tx_outbound,
+            tx_control,
+        ))))
     }
 
     pub async fn with_nick(&self, nick: String) {

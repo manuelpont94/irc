@@ -3,10 +3,13 @@ use std::fmt::Display;
 use crate::{
     constants::{ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR},
     errors::InternalIrcError,
+    handlers::channels::handle_join_channel,
     parsers::{
         channel_parser, key_parser, nickname_parser, target_parser, trailing_parser, user_parser,
         wildcards_parser,
     },
+    server_state::ServerState,
+    user_state::UserState,
 };
 use nom::{
     IResult, Parser,
@@ -45,9 +48,18 @@ impl IrcChannelOperation {
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str) -> Result<Option<String>, InternalIrcError> {
+    pub async fn handle_command(
+        command: &str,
+        server_state: &ServerState,
+        user_state: &UserState,
+    ) -> Result<Option<String>, InternalIrcError> {
         match IrcChannelOperation::irc_command_parser(command) {
-            Ok((_rem, _valid_commmand)) => todo!(),
+            Ok((_rem, valid_commmand)) => match valid_commmand {
+                IrcChannelOperation::JOIN(channels, keys) => {
+                    handle_join_channel(channels, keys, server_state, user_state).await
+                }
+                _ => todo!(),
+            },
             Err(e) => Err(InternalIrcError::ChannelOperations(format!(
                 "{}",
                 e.to_owned()

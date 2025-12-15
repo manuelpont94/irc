@@ -1,0 +1,413 @@
+This is the full implementation of the message-sending architecture using Tokio channels, split across the relevant files.
+
+This design implements the **MPSC channel** for targeted replies and the **Broadcast channel** with a **Control Channel** for dynamic channel membership.
+
+Since the files `user_state.rs`, `messages.rs`, and the client handler file (`client_handler.rs`) were not provided, I will define them below, making necessary assumptions about their structure based on your existing files and the IRC architecture.
+
+## 1\. New File: `messages.rs` (Message Types)
+
+This file defines the message payload and the control signals for the client's internal channels.
+
+```rust
+// messages.rs
+
+use tokio::sync::broadcast;
+
+/// The standard message format sent over the network
+#[derive(Debug, Clone)]
+pub struct IrcMessage {
+    /// The complete, formatted IRC line (e.g., ":server 001 nick :Welcome...")
+    pub raw_line: String,
+}
+
+impl IrcMessage {
+    pub fn new(line: String) -> Self {
+        // Ensure the line ends with the IRC required separator
+        let final_line = if line.ends_with("\r\n") {
+            line
+        } else {
+            format!("{line}\r\n")
+        };
+        IrcMessage { raw_line: final_line }
+    }
+}
+
+/// Control message sent from Server Broker to a Client Writer Task
+pub enum SubscriptionControl {
+    /// Add a new channel receiver to the active list (JOIN command)
+    Subscribe {
+        channel_name: String,
+        receiver: broadcast::Receiver<IrcMessage>,
+    },
+    /// Remove an existing channel receiver (PART or KICK command)
+    Unsubscribe(String),
+}
+```
+
+## 2\. New File: `user_state.rs` (UserState with Senders)
+
+The `UserState` now holds the sender half of the two main channels for that client.
+
+```rust
+// user_state.rs
+
+use std::{net::SocketAddr, sync::atomic::{AtomicUsize, Ordering}};
+use tokio::sync::mpsc;
+use crate::messages::{IrcMessage, SubscriptionControl};
+
+// Global counter for generating unique user IDs
+static NEXT_USER_ID: AtomicUsize = AtomicUsize::new(1);
+
+#[derive(Clone, Debug)]
+pub struct UserState {
+    pub id: usize,
+    pub addr: SocketAddr,
+
+    // Channel for targeted messages (e.g., numeric replies, errors)
+    pub outbound_sender: mpsc::Sender<IrcMessage>,
+
+    // Channel for controlling channel subscriptions (JOIN/PART)
+    pub control_sender: mpsc::Sender<SubscriptionControl>,
+
+    // Simplified registration state
+    pub is_registered: bool,
+    pub nickname: Option<String>,
+}
+
+impl UserState {
+    pub fn new(
+        addr: SocketAddr,
+        outbound_sender: mpsc::Sender<IrcMessage>,
+        control_sender: mpsc::Sender<SubscriptionControl>,
+    ) -> Self {
+        UserState {
+            id: NEXT_USER_ID.fetch_add(1, Ordering::Relaxed),
+            addr,
+            outbound_sender,
+            control_sender,
+            is_registered: false,
+            nickname: None,
+        }
+    }
+
+    pub async fn get_user_id(&self) -> Option<usize> {
+        Some(self.id)
+    }
+
+    pub fn get_nickname(&self) -> String {
+        self.nickname.clone().unwrap_or(format!("user{}", self.id))
+    }
+}
+```
+
+## 3\. Updated File: `channels_models.rs`
+
+The `IrcChannel` structure is updated to include the `broadcast::Sender` for its members.
+
+```rust
+// channels_models.rs (UPDATED)
+
+use dashmap::DashSet;
+use tokio::sync::broadcast; // <-- NEW IMPORT
+use crate::messages::IrcMessage; // <-- NEW IMPORT
+
+// ... (ChannelType and ChannelModes structs remain the same)
+
+pub type ChannelName = String;
+
+#[derive(Debug, Clone)]
+pub struct IrcChannel {
+    pub name: ChannelName,
+    pub kind: ChannelType,
+
+    pub topic: Option<String>,
+    pub topic_set_by: Option<usize>,
+    pub topic_set_at: Option<u64>, // timestamp
+
+    pub members: DashSet<usize>,    // list of user IDs
+    pub operators: DashSet<String>, // '@'
+    pub voiced: DashSet<String>,    // '+'
+
+    pub modes: ChannelModes,
+
+    // NEW: Channel for broadcasting messages to members
+    pub broadcast_sender: broadcast::Sender<IrcMessage>, // <-- NEW FIELD
+}
+
+impl IrcChannel {
+    // Helper function to create a new channel with a broadcast sender
+    pub fn new(name: ChannelName, kind: ChannelType) -> Self {
+        // Broadcast capacity of 1 is sufficient for IRC
+        let (broadcast_sender, _receiver) = broadcast::channel(1);
+
+        IrcChannel {
+            name,
+            kind,
+            topic: None,
+            topic_set_by: None,
+            topic_set_at: None,
+            members: DashSet::new(),
+            operators: DashSet::new(),
+            voiced: DashSet::new(),
+            modes: ChannelModes::default(),
+            broadcast_sender, // <-- NEW FIELD INIT
+        }
+    }
+}
+```
+
+## 4\. Updated File: `server_state.rs` (The Message Broker)
+
+The core logic for sending messages is implemented here.
+
+```rust
+// server_state.rs (UPDATED)
+
+use crate::errors::InternalIrcError;
+use dashmap::DashMap;
+use std::sync::Arc;
+use log::error; // <-- NEW IMPORT
+
+use crate::{
+    channels_models::{ChannelName, IrcChannel},
+    user_state::UserState,
+    messages::IrcMessage, // <-- NEW IMPORT
+};
+
+#[derive(Clone, Debug)]
+pub struct ServerState {
+    pub channels: Arc<DashMap<String, IrcChannel>>,
+    pub users: Arc<DashMap<usize, UserState>>,
+}
+impl ServerState {
+    // ... (new and add_connecting_user remain mostly the same, ensuring UserState with senders is inserted)
+
+    // NEW: Send a targeted message to a single user (replies/errors)
+    pub async fn send_to_user(&self, user_id: usize, message: IrcMessage) {
+        if let Some(entry) = self.users.get(&user_id) {
+            let sender = &entry.outbound_sender;
+            // The `send` call is async and applies backpressure
+            if let Err(e) = sender.send(message).await {
+                // Error means the Receiver was dropped (client writer task died/disconnected)
+                error!("Failed to send message to user {}: {}", user_id, e);
+                // TODO: Initiate cleanup for this user
+            }
+        } else {
+            error!("Attempted to send message to non-existent user: {}", user_id);
+        }
+    }
+
+    // NEW: Broadcast a message to all members of a channel
+    pub fn broadcast_to_channel(&self, channel_name: &ChannelName, message: IrcMessage) {
+        if let Some(entry) = self.channels.get(channel_name) {
+            let sender = &entry.broadcast_sender;
+
+            // The `send` call delivers the message to all active receivers immediately.
+            let _ = sender.send(message.clone());
+            // Note: We ignore the result of send(). Errors only occur if there are no receivers.
+        } else {
+            error!("Attempted to broadcast to non-existent channel: {}", channel_name);
+        }
+    }
+    // ... (channels_exists and Default impl remain the same)
+}
+```
+
+## 5\. New File: `client_handler.rs` (Refactored I/O Logic)
+
+This is where the connection is split and the two concurrent tasks are spawned.
+
+```rust
+// client_handler.rs
+
+use log::{debug, error, info};
+use std::{net::SocketAddr, collections::HashMap};
+use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::{mpsc, broadcast};
+
+use crate::{
+    server_state::ServerState,
+    user_state::UserState,
+    messages::{IrcMessage, SubscriptionControl},
+    errors::InternalIrcError,
+};
+
+const OUTBOUND_CHANNEL_SIZE: usize = 32;
+const CONTROL_CHANNEL_SIZE: usize = 4;
+
+/// Refactored entry point for a new client connection
+pub async fn handle_client(socket: TcpStream, addr: SocketAddr, server_state: ServerState) {
+    info!("Client connected: {:?}", addr);
+
+    // 1. Create the dedicated MPSC channels for this client
+    let (tx_outbound, rx_outbound) = mpsc::channel::<IrcMessage>(OUTBOUND_CHANNEL_SIZE);
+    let (tx_control, rx_control) = mpsc::channel::<SubscriptionControl>(CONTROL_CHANNEL_SIZE);
+
+    // 2. Initialize UserState with the channels and register with the ServerState
+    let user_state = UserState::new(addr, tx_outbound, tx_control);
+    let client_id = match server_state.add_connecting_user(&user_state).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Failed to register user: {:?}", e);
+            return;
+        }
+    };
+
+    // 3. Split the TCP stream into independent read/write halves
+    // This is the key to concurrent I/O.
+    let (read_half, write_half) = io::split(socket);
+
+    // 4. Spawn two new, independent tasks
+    tokio::spawn(client_reader_task(read_half, client_id, server_state.clone(), user_state.clone()));
+    tokio::spawn(client_writer_task(write_half, client_id, rx_outbound, rx_control));
+}
+
+/// Task dedicated to reading client input and processing commands.
+async fn client_reader_task(
+    reader: io::ReadHalf<TcpStream>,
+    client_id: usize,
+    server_state: ServerState,
+    user_state: UserState
+) -> Result<(), InternalIrcError> {
+    let mut buffered_reader = io::BufReader::new(reader);
+    let mut line = String::new();
+
+    loop {
+        // Read one line (IRC protocol is line-delimited)
+        let bytes_read = match buffered_reader.read_line(&mut line).await {
+            Ok(0) | Err(_) => {
+                info!("[{}] Client disconnected.", client_id);
+                // TODO: ServerState cleanup (remove user, PART from channels)
+                break;
+            }
+            Ok(n) => n,
+        };
+
+        let request = line.trim();
+        info!(">> incoming [{}] # {}", client_id, request);
+
+        // This command handler must now use server_state.send_to_user or broadcast_to_channel
+        // to send all replies.
+        match handle_request(request, &server_state, &user_state).await {
+            Ok(_) => debug!("[{}] Request handled.", client_id),
+            Err(e) => error!("[{}] Error handling request: {}", client_id, e),
+        }
+
+        line.clear();
+    }
+
+    Ok(())
+}
+
+/// Task dedicated to writing messages to the client socket from various channels.
+async fn client_writer_task(
+    mut writer: io::WriteHalf<TcpStream>,
+    client_id: usize,
+    mut rx_outbound: mpsc::Receiver<IrcMessage>, // Targeted replies
+    mut rx_control: mpsc::Receiver<SubscriptionControl>, // Channel management
+) -> Result<(), std::io::Error> {
+
+    // Map to hold dynamic channel broadcast receivers
+    let mut channel_subscriptions: HashMap<String, broadcast::Receiver<IrcMessage>> = HashMap::new();
+    let mut write_err = false;
+
+    loop {
+        // We use tokio::select! to listen for targeted replies AND control signals
+        tokio::select! {
+            // A. Targeted reply from the Server Broker (MPSC Channel)
+            Some(msg) = rx_outbound.recv() => {
+                if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
+                    error!("[{}] Failed to write targeted message: {:?}", client_id, e);
+                    write_err = true;
+                }
+            }
+
+            // B. Control signal for channel subscription changes (MPSC Channel)
+            Some(control) = rx_control.recv() => {
+                match control {
+                    SubscriptionControl::Subscribe { channel_name, receiver } => {
+                        info!("[{}] Subscribed to: {}", client_id, channel_name);
+                        channel_subscriptions.insert(channel_name, receiver);
+                    }
+                    SubscriptionControl::Unsubscribe(name) => {
+                        info!("[{}] Unsubscribed from: {}", client_id, name);
+                        channel_subscriptions.remove(&name);
+                    }
+                }
+            }
+
+            // Default case allows the task to move on to check the dynamic receivers
+            else => {
+                if write_err { break; } // Break on error
+
+                tokio::task::yield_now().await;
+            }
+        }
+
+        // --- Processing Dynamic Broadcasts (Draining the Receivers) ---
+        let mut messages_to_write = Vec::new();
+        let mut channels_to_remove = Vec::new();
+
+        for (channel_name, receiver) in channel_subscriptions.iter_mut() {
+             match receiver.try_recv() {
+                Ok(msg) => {
+                    messages_to_write.push(msg);
+                }
+                Err(broadcast::error::TryRecvError::Lagged) => {
+                    error!("[{}] Lagged on channel {}", client_id, channel_name);
+                    // Critical: Client is too slow and missed a message.
+                }
+                Err(broadcast::error::TryRecvError::Closed) => {
+                    // Channel was destroyed (e.g., last user PARTed, server cleanup)
+                    channels_to_remove.push(channel_name.clone());
+                }
+                Err(broadcast::error::TryRecvError::Empty) => {
+                    // Nothing to read, continue.
+                }
+             }
+        }
+
+        // Clean up closed channels
+        for name in channels_to_remove {
+            channel_subscriptions.remove(&name);
+        }
+
+        // Write all collected broadcast messages to the socket
+        if !messages_to_write.is_empty() {
+             for msg in messages_to_write {
+                if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
+                    error!("[{}] Failed to write broadcast message: {:?}", client_id, e);
+                    write_err = true;
+                    break;
+                }
+            }
+            if write_err { break; }
+        }
+    }
+
+    Err(std::io::Error::new(std::io::ErrorKind::Other, "Writer task terminated"))
+}
+
+// Placeholder: The command handler must now use the ServerState methods to send all replies.
+// Note: This function's signature and body would live in your command handling file (e.g., `request.rs`).
+async fn handle_request(
+    _request: &str,
+    _server_state: &ServerState,
+    _user_state: &UserState
+) -> Result<(), InternalIrcError> {
+    // Example: PRIVMSG command logic
+    /*
+    if request.to_uppercase().starts_with("PRIVMSG #CHANNEL") {
+        // 1. Get channel name and message body from `request` parser
+        let channel_name = "#channel".to_string();
+        // 2. Build the full IRC line with the user's prefix
+        let msg = IrcMessage::new("...PRIVMSG #channel :The message body".to_string());
+
+        // 3. Send the message using the ServerState Broker
+        server_state.broadcast_to_channel(&channel_name, msg);
+    }
+    */
+    Ok(())
+}
+```

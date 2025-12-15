@@ -5,7 +5,7 @@ use crate::{
     pre_registration::IrcCapPreRegistration,
     registration::IrcConnectionRegistration,
     server_state::ServerState,
-    users::UserState,
+    user_state::UserState,
 };
 
 pub async fn handle_request(
@@ -30,7 +30,7 @@ pub async fn handle_request(
     }
 
     // 3. Try normal channel operations
-    match IrcChannelOperation::handle_command(request) {
+    match IrcChannelOperation::handle_command(request, server, user).await {
         Ok(ok) => return Ok(ok),
         Err(InternalIrcError::InvalidCommand) => {}
         Err(err) => return Err(err),

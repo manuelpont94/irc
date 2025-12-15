@@ -1,5 +1,5 @@
 use crate::{
-    errors::InternalIrcError, replies::IrcReply, server_state::ServerState, users::UserState,
+    errors::InternalIrcError, replies::IrcReply, server_state::ServerState, user_state::UserState,
 };
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;

@@ -18,7 +18,7 @@ use crate::{
         user_parser,
     },
     server_state::ServerState,
-    users::UserState,
+    user_state::UserState,
 };
 
 #[derive(Debug, PartialEq)]

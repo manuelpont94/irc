@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::{
     channels_models::{ChannelName, IrcChannel},
-    users::{User, UserState},
+    user_state::UserState,
 };
 
 #[derive(Clone, Debug)]
@@ -36,6 +36,10 @@ impl ServerState {
                 "Failed to generate user ID",
             )),
         }
+    }
+
+    pub fn channels_exists(&self, channel_name: ChannelName) -> bool {
+        self.channels.contains_key(&channel_name)
     }
 }
 
