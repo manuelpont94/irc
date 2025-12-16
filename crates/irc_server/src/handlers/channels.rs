@@ -79,33 +79,26 @@ pub async fn handle_join_channel(
         ));
     }
     for channel_name in channels {
-        if server_state.channels_exists(&channel_name) {
-            todo!()
-            // add user to channel members
-        } else {
-            let irc_channel = server_state.get_or_create_channel(channel_name.clone());
-            let sc = SubscriptionControl::Subscribe {
-                channel_name: channel_name.clone(),
-                receiver: irc_channel.subscribe(),
-            };
-            match user_state.tx_control.send(sc).await {
-                Ok(_) => info!("[{client_id}] subscribe to channel {channel_name}"),
-                Err(e) => error!("Failed to send SubscriptionControl {e}"),
-            };
-            let irc_reply = IrcReply::Join {
-                nick: &caracs.clone().nick.unwrap_or("".to_owned()),
-                user: &caracs.clone().user.unwrap_or("".to_owned()),
-                host: &format!("{}", caracs.addr),
-                channel: &channel_name,
-            };
-            let welcome_channel_message = ChannelMessage::new(irc_reply.format());
-            irc_channel
-                .broadcast_message(welcome_channel_message)
-                .unwrap();
-            // in progress
-            // RPL_TOPIC (Numeric 332): Sent only to the joining user.
-            // RPL_NAMREPLY (Numeric 353) & RPL_ENDOFNAMES (Numeric 366): Sent only to the joining user.
-        };
+        match server_state.handle_join(channel_name, client_id).await {
+            Ok(channel_tx) => {
+                let irc_reply = IrcReply::Join {
+                    nick: &caracs.clone().nick.unwrap_or("".to_owned()),
+                    user: &caracs.clone().user.unwrap_or("".to_owned()),
+                    host: &format!("{}", caracs.addr),
+                    channel: &channel_name,
+                };
+                let welcome_channel_message = ChannelMessage::new(irc_reply.format());
+                channel_tx
+                    .broadcast_message(welcome_channel_message)
+                    .unwrap();
+
+                // in progress
+                // RPL_TOPIC (Numeric 332): Sent only to the joining user.
+                // RPL_NAMREPLY (Numeric 353) & RPL_ENDOFNAMES (Numeric 366): Sent only to the joining user.
+                //
+            }
+            Err(e) => (),
+        }
         //
         // broadcast
         //

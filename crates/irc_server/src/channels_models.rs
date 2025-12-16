@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use dashmap::DashSet;
-use tokio::sync::broadcast;
+use tokio::sync::{RwLock, broadcast};
 
 /// Control message sent from Server Broker to a Client Writer Task
 pub enum SubscriptionControl {
@@ -61,7 +59,6 @@ impl Default for ChannelModes {
             private: false,
             secret: false,
             topic_lock: false,
-
             key: None,
             user_limit: None,
             ban_list: DashSet::new(),
@@ -73,51 +70,68 @@ impl Default for ChannelModes {
 
 pub type ChannelName = String;
 
-#[derive(Debug, Clone)]
+// Use Tokio's RwLock for async/await support
+#[derive(Debug)]
 pub struct IrcChannel {
-    pub name: ChannelName,
+    pub name: String,
+    // Immutable
     pub kind: ChannelType,
-
-    pub topic: Option<String>,
-    pub topic_set_by: Option<usize>,
-    pub topic_set_at: Option<u64>, // timestamp
-
-    pub members: DashSet<usize>,    // list of nicknames
-    pub operators: DashSet<String>, // '@'
-    pub voiced: DashSet<String>,    // '+'
-
-    pub modes: ChannelModes,
-
-    pub tx: Arc<broadcast::Sender<ChannelMessage>>,
+    pub topic: RwLock<Option<String>>,
+    pub topic_set_by: RwLock<Option<usize>>,
+    pub topic_set_at: RwLock<Option<u64>>,
+    pub members: DashSet<usize>,
+    pub operators: DashSet<String>,
+    pub voiced: DashSet<String>,
+    pub modes: RwLock<ChannelModes>,
+    pub tx: broadcast::Sender<ChannelMessage>,
 }
+
 impl IrcChannel {
     pub fn new(name: String) -> Self {
-        // no need to store receiver, will be created on fly by the subscribe function
-        let (tx, _) = broadcast::channel(1);
+        let (tx, _) = broadcast::channel(100); // Capacity of 1 is too small! Use ~100.
 
         IrcChannel {
             name,
             kind: ChannelType::Network,
-            topic: None,
-            topic_set_by: None,
-            topic_set_at: None,
+
+            topic: RwLock::new(None),
+            topic_set_by: RwLock::new(None),
+            topic_set_at: RwLock::new(None),
             members: DashSet::new(),
             operators: DashSet::new(),
             voiced: DashSet::new(),
-            modes: ChannelModes::default(),
-            tx: Arc::new(tx),
+            modes: RwLock::new(ChannelModes::default()),
+            tx,
         }
     }
 
-    /// Create a receiver for a new channel member
     pub fn subscribe(&self) -> broadcast::Receiver<ChannelMessage> {
-        self.tx.subscribe() // Fresh receiver each time
+        self.tx.subscribe()
     }
 
     pub fn broadcast_message(
         &self,
         message: ChannelMessage,
     ) -> Result<usize, broadcast::error::SendError<ChannelMessage>> {
+        // works perfectly with &self
         self.tx.send(message)
     }
+
+    pub fn add_member(&self, user_id: usize) -> bool {
+        self.members.insert(user_id)
+    }
+}
+
+pub enum IrcChannelOperationStatus {
+    Ok,
+    AlreadyMember,
+    InviteOnlyChan,
+    ChannelIsFull,
+    NoSuchChannel,
+    TooManyTargets,
+    BannedFromChan,
+    BadChannelKey,
+    BadChanMask,
+    TooManyChannels,
+    UnavailableResource,
 }
