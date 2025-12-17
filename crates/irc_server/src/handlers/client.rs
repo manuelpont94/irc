@@ -75,17 +75,7 @@ async fn client_reader_task(
 
         // This call is now handled inside the Reader task:
         match handle_request(request, client_id, &server_state, &user_state).await {
-            Ok(Some(response)) => {
-                let irc_message = IrcMessage::new(response);
-                match user_state.tx_outbound.send(irc_message).await {
-                    Ok(_) => (), // all fine
-                    Err(e) => {
-                        error!("Failed to send targeted message: {e}");
-                        break;
-                    }
-                }
-            }
-            Ok(None) => (),
+            Ok(_) => (),
             Err(e) => error!("Err occured while dealing with request {request} with error {e}"),
         }
         // The handler's response logic (writing to the socket) must change!
@@ -114,7 +104,7 @@ async fn client_writer_task(
                 info!(">> out [{client_id}] # {}", &msg.raw_line);
                 if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
                     error!("[{}] Failed to write targeted message: {:?}", client_id, e);
-                    write_err = true;
+                    break;
                 }
             }
 
@@ -131,11 +121,11 @@ async fn client_writer_task(
                 }
             }
 
-            else => {
-                if write_err { break; } // Break on error
+            // else => {
+            //     if write_err { break; } // Break on error
 
-                tokio::task::yield_now().await;
-            }
+            //     tokio::task::yield_now().await;
+            // }
         }
 
         // --- Processing Dynamic Broadcasts (Draining the Receivers) ---

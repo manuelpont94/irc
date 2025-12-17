@@ -18,7 +18,7 @@ use crate::{
         user_parser,
     },
     server_state::ServerState,
-    user_state::UserState,
+    user_state::{UserState, UserStatus},
 };
 
 #[derive(Debug, PartialEq)]
@@ -57,7 +57,7 @@ impl IrcConnectionRegistration {
         client_id: usize,
         server_state: &ServerState,
         user_state: &UserState,
-    ) -> Result<Option<String>, InternalIrcError> {
+    ) -> Result<UserStatus, InternalIrcError> {
         match IrcConnectionRegistration::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcConnectionRegistration::NICK(nick) => {
@@ -86,7 +86,7 @@ impl IrcConnectionRegistration {
                     .await
                 }
                 IrcConnectionRegistration::MODE(nick, modes) => {
-                    handle_mode_registration(nick, modes, client_id, user_state).await
+                    handle_mode_registration(nick, modes, user_state).await
                 }
                 _ => todo!(),
             },

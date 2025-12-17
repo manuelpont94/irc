@@ -6,6 +6,7 @@ pub mod errors;
 pub mod handlers;
 pub mod message;
 pub mod message_models;
+pub mod miscellanneous;
 pub mod parsers;
 pub mod pre_registration;
 pub mod registration;

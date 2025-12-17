@@ -3,6 +3,18 @@ use crate::constants::*;
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum IrcReply<'a> {
+    Pong {
+        destination: &'a str,
+    },
+    // Capabilities
+    CapLs {
+        nick: &'a str,
+        capabilities: &'a str,
+    },
+    CapList {
+        nick: &'a str,
+        capabilities: &'a str,
+    },
     // Connection registration
     Welcome {
         nick: &'a str,
@@ -51,8 +63,14 @@ pub enum IrcReply<'a> {
         channel: &'a str,
     },
     Names {
+        nick: &'a str,
         channel: &'a str,
-        names: Vec<&'a str>,
+        visibility: &'a str,
+        names: &'a str,
+    },
+    EndOfName {
+        nick: &'a str,
+        channel: &'a str,
     },
     List {
         channel: &'a str,
@@ -63,6 +81,7 @@ pub enum IrcReply<'a> {
 
     // Errors
     ErrNeedMoreParams {
+        nick: &'a str,
         command: &'a str,
     },
     ErrUnknownCommand {
@@ -97,6 +116,17 @@ pub enum IrcReply<'a> {
 impl<'a> IrcReply<'a> {
     pub fn format(&self) -> String {
         match self {
+            // misceallanneous
+            IrcReply::Pong { destination } => {
+                format!(":{SERVER_NAME} PONG {destination}")
+            }
+            // Capabilities
+            IrcReply::CapList { nick, capabilities } => {
+                format!(":{SERVER_NAME} CAP {nick} LIST :{capabilities}")
+            }
+            IrcReply::CapLs { nick, capabilities } => {
+                format!(":{SERVER_NAME} CAP {nick} LS :{capabilities}")
+            }
             // registration replies & errors
             IrcReply::Welcome {
                 nick, user, host, ..
@@ -133,6 +163,19 @@ impl<'a> IrcReply<'a> {
                 channel,
                 topic,
             } => format!(":{SERVER_NAME} {RPL_TOPIC_NB:03} {nick}  {channel} :{topic}"),
+            IrcReply::Names {
+                nick,
+                channel,
+                visibility,
+                names,
+            } => format!(
+                ":{SERVER_NAME} {RPL_NAMREPLY_NB:03} {nick} {visibility} {channel} :{names}"
+            ),
+            IrcReply::EndOfName { nick, channel } => {
+                format!(
+                    ":{SERVER_NAME} {RPL_ENDOFNAMES_NB:03} {nick} {channel} :{RPL_ENDOFNAMES_STR}"
+                )
+            }
             IrcReply::ErrBannedFromChan { channel } => format!(
                 ":{SERVER_NAME} {ERR_BANNEDFROMCHAN_NB:03} {channel} :{ERR_BANNEDFROMCHAN_STR}"
             ),
@@ -150,46 +193,4 @@ impl<'a> IrcReply<'a> {
             _ => todo!("Implement remaining reply variants"),
         }
     }
-}
-
-#[inline]
-fn handle_sasl(sasl_status: bool) -> &'static str {
-    let mut sasl = "";
-    if sasl_status {
-        sasl = "sasl";
-    }
-    sasl
-}
-
-#[inline]
-pub fn handle_multi_prefix(handle_multi_prefix_status: bool) -> &'static str {
-    let mut multi_prefix = "";
-    if handle_multi_prefix_status {
-        multi_prefix = "multi-prefix";
-    }
-    multi_prefix
-}
-
-pub fn handle_echo_message(echo_message_status: bool) -> &'static str {
-    let mut echo_message = "";
-
-    if echo_message_status {
-        echo_message = "echo-message";
-    }
-    echo_message
-}
-
-pub fn get_server_cap_reply(
-    nick: &str,
-    command: &str,
-    sasl_status: bool,
-    echo_message_status: bool,
-    handle_multi_prefix_status: bool,
-) -> String {
-    format!(
-        "CAP {nick} {command} :{}{}{}",
-        handle_sasl(sasl_status),
-        handle_echo_message(echo_message_status),
-        handle_multi_prefix(handle_multi_prefix_status)
-    )
 }

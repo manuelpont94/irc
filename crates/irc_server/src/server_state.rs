@@ -1,8 +1,4 @@
-use crate::{
-    channels_models::{ChannelMessage, IrcChannelOperationStatus, SubscriptionControl},
-    errors::InternalIrcError,
-    replies::IrcReply,
-};
+use crate::{channels_models::IrcChannelOperationStatus, errors::InternalIrcError};
 use dashmap::DashMap;
 use std::sync::Arc;
 
@@ -38,14 +34,17 @@ impl ServerState {
         self.channels.contains_key(channel_name)
     }
 
-    fn get_or_create_channel(&self, channel_name: &str) -> Arc<IrcChannel> {
+    fn get_or_create_channel(&self, channel_name: &str) -> (Arc<IrcChannel>, bool) {
         if let Some(channel) = self.channels.get(channel_name) {
-            return channel.clone();
+            return (channel.clone(), false);
         }
-        self.channels
-            .entry(channel_name.to_owned())
-            .or_insert_with(|| Arc::new(IrcChannel::new(channel_name.to_owned())))
-            .clone()
+        (
+            self.channels
+                .entry(channel_name.to_owned())
+                .or_insert_with(|| Arc::new(IrcChannel::new(channel_name.to_owned())))
+                .clone(),
+            true,
+        )
     }
 
     pub async fn handle_join(
@@ -55,7 +54,7 @@ impl ServerState {
         key: Option<String>,
         is_invited: bool,
     ) -> Result<(IrcChannelOperationStatus, Option<Arc<IrcChannel>>), InternalIrcError> {
-        let channel = self.get_or_create_channel(&channel_name);
+        let (channel, is_new_channel) = self.get_or_create_channel(&channel_name);
         {
             let modes = channel.modes.read().await;
             if modes.user_limit.is_some() && channel.members.len() >= modes.user_limit.unwrap() {
@@ -75,15 +74,9 @@ impl ServerState {
             // User is already in the channel, do nothing
             return Ok((IrcChannelOperationStatus::AlreadyMember, None));
         }
-
-        let user_caracs = {
-            let user = self
-                .users
-                .get(&client_id)
-                .ok_or(InternalIrcError::ServerStateError("User not found"))?;
-            user.get_caracs().await
-        };
-
+        if is_new_channel {
+            channel.add_operator(client_id);
+        }
         Ok((IrcChannelOperationStatus::NewJoin, Some(channel)))
     }
 }

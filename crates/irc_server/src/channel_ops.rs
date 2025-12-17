@@ -3,13 +3,13 @@ use std::fmt::Display;
 use crate::{
     constants::{ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR},
     errors::InternalIrcError,
-    handlers::channels::handle_join_channel,
+    handlers::channels::{handle_invalid_join_channel, handle_join_channel},
     parsers::{
         channel_parser, key_parser, nickname_parser, target_parser, trailing_parser, user_parser,
         wildcards_parser,
     },
     server_state::ServerState,
-    user_state::UserState,
+    user_state::{UserState, UserStatus},
 };
 use nom::{
     IResult, Parser,
@@ -53,7 +53,7 @@ impl IrcChannelOperation {
         client_id: usize,
         server_state: &ServerState,
         user_state: &UserState,
-    ) -> Result<Option<String>, InternalIrcError> {
+    ) -> Result<UserStatus, InternalIrcError> {
         match IrcChannelOperation::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcChannelOperation::JOIN(channels_keys) => {
@@ -405,9 +405,14 @@ impl IrcInvalidChannelOperation {
         ));
         parser.parse(input)
     }
-    pub fn handle_command(command: &str) -> Result<Option<String>, InternalIrcError> {
+    pub async fn handle_command(
+        command: &str,
+        user_state: &UserState,
+    ) -> Result<UserStatus, InternalIrcError> {
         match IrcInvalidChannelOperation::irc_command_parser(command) {
-            Ok((_rem, valid_commmand)) => Ok(Some(format!("{valid_commmand}"))),
+            Ok((_rem, IrcInvalidChannelOperation(valid_commmand))) => {
+                handle_invalid_join_channel(valid_commmand, user_state).await
+            }
             Err(_e) => Err(InternalIrcError::InvalidCommand),
         }
     }

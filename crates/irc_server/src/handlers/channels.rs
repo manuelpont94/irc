@@ -1,12 +1,12 @@
-use log::{error, info};
+use std::sync::Arc;
 
 use crate::{
-    channels_models::{ChannelMessage, IrcChannelOperationStatus, SubscriptionControl},
+    channels_models::{ChannelMessage, IrcChannel, IrcChannelOperationStatus, SubscriptionControl},
     errors::InternalIrcError,
     message_models::IrcMessage,
     replies::IrcReply,
     server_state::ServerState,
-    user_state::UserState,
+    user_state::{UserState, UserStatus},
 };
 
 pub async fn handle_join_channel(
@@ -14,7 +14,7 @@ pub async fn handle_join_channel(
     client_id: usize,
     server_state: &ServerState,
     user_state: &UserState,
-) -> Result<Option<String>, InternalIrcError> {
+) -> Result<UserStatus, InternalIrcError> {
     // 3.2.1 Join message
 
     //       Command: JOIN
@@ -68,14 +68,18 @@ pub async fn handle_join_channel(
     // First JOINer gets +o
 
     let caracs = user_state.get_caracs().await;
+    let nick = &caracs.clone().nick.unwrap_or("*".to_owned());
+    let user = &caracs.clone().user.unwrap_or("*".to_owned());
+    let host = &format!("{}", caracs.addr);
     if !caracs.registered {
         let nick = match caracs.nick {
             Some(nick) => nick.clone(),
             None => "*".to_owned(),
         };
-        return Ok(Some(
-            crate::replies::IrcReply::ErrNotRegistered { nick: &nick }.format(),
-        ));
+        let irc_reply = IrcReply::ErrNotRegistered { nick: &nick };
+        let not_registered_message = IrcMessage::new(irc_reply.format());
+        let _ = user_state.tx_outbound.send(not_registered_message).await;
+        return Ok(UserStatus::Active);
     }
     for (channel_name, key) in channels_keys {
         match server_state
@@ -84,9 +88,9 @@ pub async fn handle_join_channel(
         {
             Ok((IrcChannelOperationStatus::NewJoin, Some(channel))) => {
                 let irc_reply = IrcReply::Join {
-                    nick: &caracs.clone().nick.unwrap_or("*".to_owned()),
-                    user: &caracs.clone().user.unwrap_or("*".to_owned()),
-                    host: &format!("{}", caracs.addr),
+                    nick,
+                    user,
+                    host,
                     channel: &channel_name,
                 };
                 let rx = channel.subscribe();
@@ -102,7 +106,7 @@ pub async fn handle_join_channel(
                 let potential_topic = channel.topic.read().await;
                 if let Some(topic) = potential_topic.as_deref() {
                     let irc_reply = IrcReply::Topic {
-                        nick: &caracs.clone().nick.unwrap_or("*".to_owned()),
+                        nick: nick,
                         channel: &channel_name,
                         topic: topic,
                     };
@@ -110,15 +114,31 @@ pub async fn handle_join_channel(
                     let _ = user_state.tx_outbound.send(topic_message).await;
                 } else {
                     let irc_reply = IrcReply::NoTopic {
-                        nick: &caracs.clone().nick.unwrap_or("*".to_owned()),
+                        nick: nick,
                         channel: &channel_name,
                     };
                     let no_topic_message = IrcMessage::new(irc_reply.format());
                     let _ = user_state.tx_outbound.send(no_topic_message).await;
                 }
+
+                let (visibility, member_list) = handle_names_reply(&channel, server_state).await;
                 // ├─ send names list
                 // │    RPL_NAMREPLY (353)
                 // │    RPL_ENDOFNAMES (366)
+                let irc_reply = IrcReply::Names {
+                    nick: nick,
+                    channel: &channel_name,
+                    visibility: &visibility,
+                    names: &member_list,
+                };
+                let channel_names = IrcMessage::new(irc_reply.format());
+                let _ = user_state.tx_outbound.send(channel_names).await;
+                let irc_reply = IrcReply::EndOfName {
+                    nick,
+                    channel: &channel_name,
+                };
+                let channel_end_of_names = IrcMessage::new(irc_reply.format());
+                let _ = user_state.tx_outbound.send(channel_end_of_names).await;
             }
             Ok((IrcChannelOperationStatus::ChannelIsFull, None)) => {
                 let irc_reply = IrcReply::ErrChannelIsFull {
@@ -148,7 +168,7 @@ pub async fn handle_join_channel(
                 let err_bad_channel_key = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(err_bad_channel_key).await;
             }
-            Ok((IrcChannelOperationStatus::AlreadyMember, None)) => todo!(),
+            Ok((IrcChannelOperationStatus::AlreadyMember, None)) => (),
             Ok(_) => (),
             Err(_e) => (),
         }
@@ -156,10 +176,13 @@ pub async fn handle_join_channel(
         // broadcast
         //
     }
-    Ok(None)
+    Ok(UserStatus::Active)
 }
 
-fn handle_names_reply(server_state: &ServerState, channel_name: &str) -> String {
+async fn handle_names_reply(
+    channel: &Arc<IrcChannel>,
+    server_state: &ServerState,
+) -> (String, String) {
     // The RPL_NAMREPLY (353) is one of the most important numeric replies in IRC. It tells the client exactly who is currently in a channel and what their "status" is.
     // Here is a breakdown of the syntax and the specific cases mentioned in RFC 2812.
 
@@ -172,10 +195,10 @@ fn handle_names_reply(server_state: &ServerState, channel_name: &str) -> String 
 
     // 2. The Three Visibility Cases
     // The RFC defines the symbols based on the channel modes (specifically +s for Secret and +p for Private).
+    //let is_public = modes.
 
     // Case A: Public Channels (=)
     // This is the default for standard channels. Any channel that is not set to Secret (+s) or Private (+p) uses the = symbol.
-
     //     Logic: channel_modes does not contain s or p.
     //     Example:
     //         :server 353 Alice = #tokio :Alice @Bob +Charlie
@@ -185,7 +208,6 @@ fn handle_names_reply(server_state: &ServerState, channel_name: &str) -> String 
     // Used when a channel has the Private mode (+p) set. In older IRC deamons, this meant the channel wouldn't show up in a global /LIST unless you knew the name.
     //     Logic: channel_modes contains p.
     //     Example:
-
     //         :server 353 Alice * #secret_project :Alice @Manager
     //     Translation: Alice is in #secret_project. The * tells her client the channel is marked Private.
 
@@ -195,5 +217,59 @@ fn handle_names_reply(server_state: &ServerState, channel_name: &str) -> String 
     //     Example:
     //         :server 353 Alice @ #admins :Alice @SuperUser
     //     Translation: Alice is in the secret #admins channel. The @ symbol confirms the channel is in Secret mode.
-    todo!()
+    let modes = channel.modes.read().await;
+    let is_secret_channel = modes.secret;
+    let is_private_channel = modes.private;
+
+    let visibility_symbol = {
+        if is_secret_channel {
+            "@"
+        } else if is_private_channel {
+            "*"
+        } else {
+            "="
+        }
+    };
+
+    let mut member_list = String::new();
+    let channel_members = channel
+        .members
+        .iter()
+        .map(|m| m.clone())
+        .collect::<Vec<usize>>();
+
+    for client_id in channel_members {
+        if let Some(user) = server_state.users.get(&client_id) {
+            let prefix = if channel.operators.contains(&client_id) {
+                "@"
+            } else if channel.voiced.contains(&client_id) {
+                "+"
+            } else {
+                ""
+            };
+            let user_caracs = user.user.read().await;
+            let nick = user_caracs.nick.as_deref().unwrap();
+            member_list.push_str(&format!("{prefix}{nick} "));
+        }
+    }
+    (visibility_symbol.to_owned(), member_list.trim().to_string())
+}
+
+pub async fn handle_invalid_join_channel(
+    command: String,
+    user_state: &UserState,
+) -> Result<UserStatus, InternalIrcError> {
+    let user_caracs = user_state.get_caracs().await;
+    let nick = if user_caracs.registered {
+        user_caracs.nick.unwrap().clone()
+    } else {
+        "*".to_string()
+    };
+    let irc_reply = IrcReply::ErrNeedMoreParams {
+        nick: &nick,
+        command: &command,
+    };
+    let invalid_join_message = IrcMessage::new(irc_reply.format());
+    let _ = user_state.tx_outbound.send(invalid_join_message).await;
+    Ok(UserStatus::Active)
 }

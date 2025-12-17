@@ -5,7 +5,12 @@ use nom::{
     combinator::recognize,
 };
 
-use crate::{errors::InternalIrcError, handlers::registration::*};
+use crate::{
+    errors::InternalIrcError,
+    handlers::registration::*,
+    server_state::ServerState,
+    user_state::{UserState, UserStatus},
+};
 // CAP            = "CAP" SP cap-subcmd [SP cap-params]
 // cap-subcmd     = "LS" / "LIST" / "REQ" / "ACK" / "NAK" / "CLEAR" / "END"
 // cap-params     = 1*(cap-token / cap-version / cap-list)
@@ -48,12 +53,21 @@ impl IrcCapPreRegistration {
         parser.parse(input)
     }
 
-    pub fn handle_command(command: &str, user: &str) -> Result<Option<String>, InternalIrcError> {
+    pub async fn handle_command(
+        command: &str,
+        client_id: usize,
+        server_state: &ServerState,
+        user_state: &UserState,
+    ) -> Result<UserStatus, InternalIrcError> {
         match IrcCapPreRegistration::irc_cap_parser(command) {
             Ok((_, valid_cap)) => match valid_cap {
-                IrcCapPreRegistration::LS => Ok(handle_cap_ls_response(user)),
-                IrcCapPreRegistration::LIST => Ok(handle_cap_list_response(user)),
-                IrcCapPreRegistration::END => Ok(handle_cap_end_response()),
+                IrcCapPreRegistration::LS => {
+                    handle_cap_ls_response(client_id, server_state, user_state).await
+                }
+                IrcCapPreRegistration::LIST => {
+                    handle_cap_list_response(client_id, server_state, user_state).await
+                }
+                IrcCapPreRegistration::END => handle_cap_end_response(),
                 _ => todo!(),
             },
             Err(_e) => Err(InternalIrcError::InvalidCommand),

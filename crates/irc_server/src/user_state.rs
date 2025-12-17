@@ -20,6 +20,17 @@ fn get_next_user_id() -> usize {
     NEXT_USER_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum UserStatus {
+    /// Connected, but hasn't sent NICK/USER yet.
+    Handshaking,
+    /// Sent NICK/USER, received Welcome Burst (001-004). Fully active.
+    Active,
+    /// The user sent a QUIT command or the socket is closing.
+    /// We keep the struct alive briefly to clean up channels.
+    Leaving(String),
+}
+
 #[derive(Debug)]
 pub struct User {
     pub user_id: usize,

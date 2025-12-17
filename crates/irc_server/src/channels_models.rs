@@ -47,8 +47,8 @@ pub struct IrcChannel {
     pub topic_set_by: RwLock<Option<usize>>,
     pub topic_set_at: RwLock<Option<u64>>,
     pub members: DashSet<usize>,
-    pub operators: DashSet<String>,
-    pub voiced: DashSet<String>,
+    pub operators: DashSet<usize>,
+    pub voiced: DashSet<usize>,
     pub modes: RwLock<ChannelModes>,
     pub tx: broadcast::Sender<ChannelMessage>,
 }
@@ -85,6 +85,10 @@ impl IrcChannel {
 
     pub fn add_member(&self, client_id: usize) -> bool {
         self.members.insert(client_id)
+    }
+
+    pub fn add_operator(&self, client_id: usize) -> bool {
+        self.operators.insert(client_id)
     }
 
     pub async fn is_banned(&self, client_id: usize) -> bool {

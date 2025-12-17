@@ -1,49 +1,60 @@
 use crate::{
     channel_ops::{IrcChannelOperation, IrcInvalidChannelOperation},
-    commands::IrcUnknownCommand,
     errors::InternalIrcError,
+    handlers::miscellanneous::IrcUnknownCommand,
+    miscellanneous::IrcMiscellaneousMessages,
     pre_registration::IrcCapPreRegistration,
     registration::IrcConnectionRegistration,
     server_state::ServerState,
-    user_state::UserState,
+    user_state::{UserState, UserStatus},
 };
 
 pub async fn handle_request(
     request: &str,
     client_id: usize,
-    server: &ServerState,
-    user: &UserState,
-) -> Result<Option<String>, InternalIrcError> {
+    server_state: &ServerState,
+    user_state: &UserState,
+) -> Result<UserStatus, InternalIrcError> {
     log::info!("{request:?}");
 
+    // 0. Try pre-registration
+    match IrcMiscellaneousMessages::handle_command(request, client_id, user_state).await {
+        Ok(status) => return Ok(status),
+        Err(InternalIrcError::InvalidCommand) => {}
+        Err(err) => return Err(err),
+    }
+
     // 1. Try pre-registration
-    match IrcCapPreRegistration::handle_command(request, "*") {
-        Ok(ok) => return Ok(ok),
+    match IrcCapPreRegistration::handle_command(request, client_id, server_state, user_state).await
+    {
+        Ok(status) => return Ok(status),
         Err(InternalIrcError::InvalidCommand) => {}
         Err(err) => return Err(err),
     }
 
     // 2. Try registration
-    match IrcConnectionRegistration::handle_command(request, client_id, server, user).await {
-        Ok(ok) => return Ok(ok),
+    match IrcConnectionRegistration::handle_command(request, client_id, server_state, user_state)
+        .await
+    {
+        Ok(status) => return Ok(status),
         Err(InternalIrcError::InvalidCommand) => {}
         Err(err) => return Err(err),
     }
 
     // 3. Try normal channel operations
-    match IrcChannelOperation::handle_command(request, client_id, server, user).await {
-        Ok(ok) => return Ok(ok),
+    match IrcChannelOperation::handle_command(request, client_id, server_state, user_state).await {
+        Ok(status) => return Ok(status),
         Err(InternalIrcError::InvalidCommand) => {}
         Err(err) => return Err(err),
     }
 
     // 4. Try invalid-channel ops
-    match IrcInvalidChannelOperation::handle_command(request) {
-        Ok(ok) => return Ok(ok),
+    match IrcInvalidChannelOperation::handle_command(request, user_state).await {
+        Ok(status) => return Ok(status),
         Err(InternalIrcError::InvalidCommand) => {}
         Err(err) => return Err(err),
     }
 
     // 5. Fallback to "unknown command"
-    IrcUnknownCommand::handle_command(request)
+    IrcUnknownCommand::handle_command(request, user_state).await
 }
