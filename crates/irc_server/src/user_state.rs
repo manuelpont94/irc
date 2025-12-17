@@ -72,17 +72,20 @@ pub struct UserState {
     pub user: Arc<RwLock<User>>,
     pub tx_outbound: Sender<IrcMessage>,
     pub tx_control: Sender<SubscriptionControl>,
+    pub tx_status: Sender<UserStatus>,
 }
 impl UserState {
     pub fn new(
         addr: SocketAddr,
         tx_outbound: Sender<IrcMessage>,
         tx_control: Sender<SubscriptionControl>,
+        tx_status:Sender<UserStatus> 
     ) -> Self {
         UserState {
             user: Arc::new(RwLock::new(User::new(addr))),
             tx_outbound,
             tx_control,
+            tx_status,
         }
     }
 

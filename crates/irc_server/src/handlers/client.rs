@@ -9,6 +9,7 @@ use super::request::handle_request;
 use crate::channels_models::{ChannelMessage, SubscriptionControl};
 use crate::errors::InternalIrcError;
 use crate::message_models::IrcMessage;
+use crate::user_state::UserStatus;
 use crate::{server_state::ServerState, user_state::UserState};
 
 // Define the size of the personal outbound channel
@@ -21,8 +22,9 @@ pub async fn handle_client(socket: TcpStream, addr: SocketAddr, server_state: &S
 
     let (tx_outbound, rx_outbound) = mpsc::channel::<IrcMessage>(OUTBOUND_CHANNEL_SIZE);
     let (tx_control, rx_control) = mpsc::channel::<SubscriptionControl>(CONTROL_CHANNEL_SIZE);
+    let (tx_status, rx_status) = mpsc::channel::<UserStatus>(CONTROL_CHANNEL_SIZE);
 
-    let user_state = UserState::new(addr, tx_outbound, tx_control);
+    let user_state = UserState::new(addr, tx_outbound, tx_control, tx_status);
     let client_id = match server_state.add_connecting_user(&user_state).await {
         Ok(id) => id,
         Err(e) => {
@@ -45,6 +47,7 @@ pub async fn handle_client(socket: TcpStream, addr: SocketAddr, server_state: &S
         client_id,
         rx_outbound,
         rx_control,
+        rx_status,
     ));
 }
 
@@ -92,6 +95,7 @@ async fn client_writer_task(
     client_id: usize,
     mut rx_outbound: mpsc::Receiver<IrcMessage>, // Targeted replies
     mut rx_control: mpsc::Receiver<SubscriptionControl>, // Channel management
+    mut rx_status: mpsc::Receiver<UserStatus>, // Channel UserStatus
 ) -> Result<(), std::io::Error> {
     // Map to hold dynamic channel broadcast receivers
     let mut channel_subscriptions: HashMap<String, broadcast::Receiver<ChannelMessage>> =
@@ -120,6 +124,12 @@ async fn client_writer_task(
                     }
                 }
             }
+            Some(status) = rx_status.recv() => {
+                // match status {
+                //     todo!()
+                // }
+            }
+
 
             // else => {
             //     if write_err { break; } // Break on error
