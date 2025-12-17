@@ -23,7 +23,7 @@ use nom::{
 
 pub enum IrcChannelOperation {
     LEAVE, // JOIN 0 - should be tested befoire JOIN Channel
-    JOIN(Vec<String>, Option<Vec<String>>),
+    JOIN(Vec<(String, Option<String>)>),
     PART(Vec<String>, Option<String>),
     MODE(String, Vec<(char, Vec<char>)>),
     TOPIC(String, Option<String>),
@@ -56,8 +56,8 @@ impl IrcChannelOperation {
     ) -> Result<Option<String>, InternalIrcError> {
         match IrcChannelOperation::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
-                IrcChannelOperation::JOIN(channels, keys) => {
-                    handle_join_channel(channels, keys, client_id, server_state, user_state).await
+                IrcChannelOperation::JOIN(channels_keys) => {
+                    handle_join_channel(channels_keys, client_id, server_state, user_state).await
                 }
                 _ => todo!(),
             },
@@ -110,8 +110,16 @@ pub fn valid_join_channel_parser(input: &str) -> IResult<&str, IrcChannelOperati
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<String>>();
-    let keys = keys.map(|v| v.into_iter().map(str::to_string).collect::<Vec<String>>());
-    Ok((rem, IrcChannelOperation::JOIN(channels, keys)))
+    let mut opt_keys = vec![None; channels.len()];
+    if let Some(keys) = keys {
+        keys.into_iter()
+            .enumerate()
+            .for_each(|(i, v)| opt_keys[i] = Some((*v).to_string()))
+    }
+    let channel_keys: Vec<(String, Option<String>)> =
+        std::iter::zip(channels, opt_keys).collect::<Vec<_>>();
+    //let keys = keys.iter().enumerate().map(|v| v.into_iter().map(str::to_string).collect::<Vec<String>>());
+    Ok((rem, IrcChannelOperation::JOIN(channel_keys)))
 }
 
 // LEAVE Message / JOIN 0

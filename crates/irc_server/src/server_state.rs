@@ -52,29 +52,28 @@ impl ServerState {
         &self,
         channel_name: String,
         client_id: usize,
-        key: Option<&str>,
+        key: Option<String>,
         is_invited: bool,
-    ) -> Result<IrcChannelOperationStatus, InternalIrcError> {
-        // 1. Get or Create the channel (using the Arc approach)
+    ) -> Result<(IrcChannelOperationStatus, Option<Arc<IrcChannel>>), InternalIrcError> {
         let channel = self.get_or_create_channel(&channel_name);
-
         {
             let modes = channel.modes.read().await;
             if modes.user_limit.is_some() && channel.members.len() >= modes.user_limit.unwrap() {
-                return Ok(IrcChannelOperationStatus::ChannelIsFull);
+                return Ok((IrcChannelOperationStatus::ChannelIsFull, None));
             }
             if modes.ban_list.contains(&client_id) && !modes.except_list.contains(&client_id) {
-                return Ok(IrcChannelOperationStatus::BannedFromChan);
+                return Ok((IrcChannelOperationStatus::BannedFromChan, None));
             }
             if modes.invite_only && !is_invited {
-                return Ok(IrcChannelOperationStatus::InviteOnlyChan);
+                return Ok((IrcChannelOperationStatus::InviteOnlyChan, None));
             }
-            // ... check bans, keys ...
+            if modes.key.is_some() && (modes.key != key) {
+                return Ok((IrcChannelOperationStatus::BadChannelKey, None));
+            }
         }
-
         if !channel.add_member(client_id) {
             // User is already in the channel, do nothing
-            return Ok(IrcChannelOperationStatus::AlreadyMember);
+            return Ok((IrcChannelOperationStatus::AlreadyMember, None));
         }
 
         let user_caracs = {
@@ -85,27 +84,7 @@ impl ServerState {
             user.get_caracs().await
         };
 
-        let irc_reply = IrcReply::Join {
-            nick: &user_caracs.clone().nick.unwrap_or("".to_owned()),
-            user: &user_caracs.clone().user.unwrap_or("".to_owned()),
-            host: &format!("{}", user_caracs.addr),
-            channel: &channel_name,
-        };
-        let welcome_channel_message = ChannelMessage::new(irc_reply.format());
-        channel.broadcast_message(welcome_channel_message).unwrap();
-
-        // broadcast subscription
-        if let Some(user) = self.users.get(&client_id) {
-            let rx = channel.subscribe();
-            let _ = user
-                .tx_control
-                .send(SubscriptionControl::Subscribe {
-                    channel_name: channel_name.clone(),
-                    receiver: rx,
-                })
-                .await;
-        }
-        Ok(IrcChannelOperationStatus::Ok)
+        Ok((IrcChannelOperationStatus::NewJoin, Some(channel)))
     }
 }
 

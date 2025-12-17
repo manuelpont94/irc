@@ -42,10 +42,12 @@ pub enum IrcReply<'a> {
         channel: &'a str,
     },
     Topic {
+        nick: &'a str,
         channel: &'a str,
         topic: &'a str,
     },
     NoTopic {
+        nick: &'a str,
         channel: &'a str,
     },
     Names {
@@ -76,11 +78,26 @@ pub enum IrcReply<'a> {
     ErrNotRegistered {
         nick: &'a str,
     },
+    ErrBannedFromChan {
+        channel: &'a str,
+    },
+    ErrInviteOnlyChan {
+        channel: &'a str,
+    },
+    ErrBadChannelKey {
+        channel: &'a str,
+    },
+    ErrChannelIsFull {
+        channel: &'a str,
+    },
 }
+
+//
 
 impl<'a> IrcReply<'a> {
     pub fn format(&self) -> String {
         match self {
+            // registration replies & errors
             IrcReply::Welcome {
                 nick, user, host, ..
             } => format!(
@@ -107,6 +124,29 @@ impl<'a> IrcReply<'a> {
             IrcReply::ErrUnknownCommand { nick, command } => format!(
                 ":{SERVER_NAME} {ERR_UNKNOWNCOMMAND_NB:03} {nick} {command} :{ERR_UNKNOWNCOMMAND_STR}"
             ),
+            //Channels replies & errors
+            IrcReply::NoTopic { nick, channel } => {
+                format!(":{SERVER_NAME} {RPL_NOTOPIC_NB:03} {nick} {channel} :{RPL_NOTOPIC_STR}")
+            }
+            IrcReply::Topic {
+                nick,
+                channel,
+                topic,
+            } => format!(":{SERVER_NAME} {RPL_TOPIC_NB:03} {nick}  {channel} :{topic}"),
+            IrcReply::ErrBannedFromChan { channel } => format!(
+                ":{SERVER_NAME} {ERR_BANNEDFROMCHAN_NB:03} {channel} :{ERR_BANNEDFROMCHAN_STR}"
+            ),
+            IrcReply::ErrInviteOnlyChan { channel } => format!(
+                ":{SERVER_NAME} {ERR_INVITEONLYCHAN_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
+            ),
+            IrcReply::ErrBadChannelKey { channel } => format!(
+                ":{SERVER_NAME} {ERR_BADCHANNELKEY_NB:03} {channel} :{ERR_BADCHANNELKEY_STR}"
+            ),
+            IrcReply::ErrChannelIsFull { channel } => {
+                format!(
+                    ":{SERVER_NAME} {ERR_CHANNELISFULL_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
+                )
+            }
             _ => todo!("Implement remaining reply variants"),
         }
     }

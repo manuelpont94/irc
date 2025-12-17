@@ -1,5 +1,3 @@
-use tokio::sync::broadcast;
-
 #[derive(Debug, Clone)]
 pub struct IrcMessage {
     pub raw_line: String,

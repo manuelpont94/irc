@@ -2,7 +2,6 @@ use crate::{
     channel_ops::{IrcChannelOperation, IrcInvalidChannelOperation},
     commands::IrcUnknownCommand,
     errors::InternalIrcError,
-    handlers::client,
     pre_registration::IrcCapPreRegistration,
     registration::IrcConnectionRegistration,
     server_state::ServerState,

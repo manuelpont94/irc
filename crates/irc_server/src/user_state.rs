@@ -95,7 +95,7 @@ impl UserState {
         }
 
         // slow path: need to check nick/user and maybe register
-        let mut user_data = self.user.write().await;
+        let user_data = self.user.write().await;
 
         // double-check under write lock
         if user_data.registered.load(Ordering::Relaxed) {

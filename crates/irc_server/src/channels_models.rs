@@ -35,8 +35,6 @@ pub enum ChannelType {
     Safe,     // '!'
 }
 
-
-
 pub type ChannelName = String;
 
 // Use Tokio's RwLock for async/await support
@@ -98,11 +96,10 @@ impl IrcChannel {
         let modes = self.modes.write().await;
         modes.ban_list.insert(client_id)
     }
-
 }
 
 pub enum IrcChannelOperationStatus {
-    Ok,
+    NewJoin,
     AlreadyMember,
     InviteOnlyChan,
     ChannelIsFull,
@@ -114,7 +111,6 @@ pub enum IrcChannelOperationStatus {
     TooManyChannels,
     UnavailableResource,
 }
-
 
 // n RFC 2812, which defines the Internet Relay Chat (IRC) protocol, channel modes are settings that dictate how a channel operates. Each mode can control various aspects of channel access and interaction. Here's a breakdown of each mode you mentioned, including its implications:
 
