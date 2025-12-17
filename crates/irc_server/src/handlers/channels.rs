@@ -102,7 +102,7 @@ pub async fn handle_join_channel(
                     })
                     .await;
                 let welcome_channel_message = ChannelMessage::new(irc_reply.format());
-                channel.broadcast_message(welcome_channel_message).unwrap();
+                channel.broadcast_message(welcome_channel_message);
                 let potential_topic = channel.topic.read().await;
                 if let Some(topic) = potential_topic.as_deref() {
                     let irc_reply = IrcReply::Topic {
@@ -139,6 +139,7 @@ pub async fn handle_join_channel(
                 };
                 let channel_end_of_names = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(channel_end_of_names).await;
+                user_state.join_channel(&channel_name).await
             }
             Ok((IrcChannelOperationStatus::ChannelIsFull, None)) => {
                 let irc_reply = IrcReply::ErrChannelIsFull {

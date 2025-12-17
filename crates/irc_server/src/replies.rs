@@ -138,7 +138,7 @@ impl<'a> IrcReply<'a> {
                 user,
                 host,
                 channel,
-            } => format!(":{nick}!{user}@{host} JOIN {channel}"),
+            } => format!(":{nick}!{user}@{host} JOIN :{channel}"),
             IrcReply::UModeIs { nick, modes } => {
                 format!(":{SERVER_NAME} {RPL_UMODEIS_NB:03} {nick} :{modes}")
             }

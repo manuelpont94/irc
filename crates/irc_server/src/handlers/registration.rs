@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     errors::InternalIrcError,
     message_models::IrcMessage,
@@ -165,4 +167,14 @@ pub async fn handle_mode_registration(
         Err(e) => return Err(e),
     };
     Ok(UserStatus::Active)
+}
+
+pub async fn handle_quit_registration(
+    reason: Option<String>,
+    client_id: usize,
+    _user_state: &UserState,
+    server_state: &ServerState,
+) -> Result<UserStatus, InternalIrcError> {
+    server_state.handle_quit(client_id, reason.clone()).await;
+    Ok(UserStatus::Leaving(reason))
 }

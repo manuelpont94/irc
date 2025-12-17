@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use flexi_logger::{Duplicate, Logger};
 use irc_server::handlers::client::handle_client;
 use irc_server::server_state::ServerState;
@@ -13,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .start())
         .ok();
     let listener = TcpListener::bind("127.0.0.1:6667").await?;
-    let server_state = ServerState::new();
+    let server_state = Arc::new(ServerState::new());
 
     loop {
         let (socket, addr) = listener.accept().await?;

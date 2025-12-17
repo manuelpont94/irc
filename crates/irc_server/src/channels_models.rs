@@ -1,4 +1,5 @@
 use dashmap::DashSet;
+use log::{error, info};
 use tokio::sync::{RwLock, broadcast};
 
 /// Control message sent from Server Broker to a Client Writer Task
@@ -55,7 +56,7 @@ pub struct IrcChannel {
 
 impl IrcChannel {
     pub fn new(name: String) -> Self {
-        let (tx, _) = broadcast::channel(100); // Capacity of 1 is too small! Use ~100.
+        let tx = broadcast::channel(100).0;
 
         IrcChannel {
             name,
@@ -75,16 +76,25 @@ impl IrcChannel {
         self.tx.subscribe()
     }
 
-    pub fn broadcast_message(
-        &self,
-        message: ChannelMessage,
-    ) -> Result<usize, broadcast::error::SendError<ChannelMessage>> {
+    pub fn broadcast_message(&self, message: ChannelMessage) {
         // works perfectly with &self
-        self.tx.send(message)
+        info!(
+            "Broadcasting to {}: {} receivers",
+            self.name,
+            self.tx.receiver_count()
+        );
+        match self.tx.send(message) {
+            Ok(n) => info!("Sent to {} receivers", n),
+            Err(e) => error!("Broadcast failed: {:?}", e),
+        }
     }
 
     pub fn add_member(&self, client_id: usize) -> bool {
         self.members.insert(client_id)
+    }
+
+    pub fn remove_member(&self, client_id: usize) {
+        let _ = self.members.remove(&client_id);
     }
 
     pub fn add_operator(&self, client_id: usize) -> bool {

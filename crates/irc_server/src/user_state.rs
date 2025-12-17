@@ -1,7 +1,8 @@
-use crate::channels_models::SubscriptionControl;
+use crate::channels_models::{ChannelName, SubscriptionControl};
 use crate::replies::IrcReply;
 use crate::{errors::InternalIrcError, message_models::IrcMessage};
 use core::net::SocketAddr;
+use dashmap::DashSet;
 use std::{
     collections::HashSet,
     sync::{Arc, atomic::AtomicBool},
@@ -28,7 +29,7 @@ pub enum UserStatus {
     Active,
     /// The user sent a QUIT command or the socket is closing.
     /// We keep the struct alive briefly to clean up channels.
-    Leaving(String),
+    Leaving(Option<String>),
 }
 
 #[derive(Debug)]
@@ -40,6 +41,7 @@ pub struct User {
     pub full_user_name: Option<String>,
     pub registered: AtomicBool,
     pub addr: SocketAddr,
+    pub member_of: DashSet<ChannelName>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +53,7 @@ pub struct UserSnapshot {
     pub full_user_name: Option<String>,
     pub registered: bool,
     pub addr: SocketAddr,
+    pub member_of: HashSet<ChannelName>,
 }
 
 impl User {
@@ -63,6 +66,7 @@ impl User {
             full_user_name: None,
             registered: AtomicBool::new(false),
             addr,
+            member_of: DashSet::new(),
         }
     }
 }
@@ -79,7 +83,7 @@ impl UserState {
         addr: SocketAddr,
         tx_outbound: Sender<IrcMessage>,
         tx_control: Sender<SubscriptionControl>,
-        tx_status:Sender<UserStatus> 
+        tx_status: Sender<UserStatus>,
     ) -> Self {
         UserState {
             user: Arc::new(RwLock::new(User::new(addr))),
@@ -144,6 +148,7 @@ impl UserState {
 
     pub async fn get_caracs(&self) -> UserSnapshot {
         let user_data = self.user.read().await;
+        let member_of = user_data.member_of.iter().map(|cn| cn.clone()).collect();
         UserSnapshot {
             user_id: user_data.user_id,
             nick: user_data.nick.clone(),
@@ -152,6 +157,7 @@ impl UserState {
             full_user_name: user_data.full_user_name.clone(),
             registered: user_data.registered.load(Ordering::Acquire),
             addr: user_data.addr,
+            member_of,
         }
     }
 
@@ -205,6 +211,15 @@ impl UserState {
             user_data.modes = new_user_mode_flags;
             Ok(None)
         }
+    }
+    pub async fn join_channel(&self, channel_name: &ChannelName) {
+        let user_data = self.user.write().await;
+        user_data.member_of.insert(channel_name.clone());
+    }
+
+    pub async fn left_channel(&self, channel_name: &ChannelName) {
+        let user_data = self.user.write().await;
+        let _ = user_data.member_of.remove(channel_name);
     }
 
     // pub async fn send

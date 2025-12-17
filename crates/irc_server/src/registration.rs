@@ -11,8 +11,10 @@ use nom::{
 use crate::{
     errors::InternalIrcError,
     handlers::registration::{
-        handle_mode_registration, handle_nick_registration, handle_user_registration,
+        handle_mode_registration, handle_nick_registration, handle_quit_registration,
+        handle_user_registration,
     },
+    message::Message,
     parsers::{
         host_parser, hostname_parser, nickname_parser, servername_parser, trailing_parser,
         user_parser,
@@ -87,6 +89,9 @@ impl IrcConnectionRegistration {
                 }
                 IrcConnectionRegistration::MODE(nick, modes) => {
                     handle_mode_registration(nick, modes, user_state).await
+                }
+                IrcConnectionRegistration::QUIT(message) => {
+                    handle_quit_registration(message, client_id, user_state, server_state).await
                 }
                 _ => todo!(),
             },

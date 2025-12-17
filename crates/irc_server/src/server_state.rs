@@ -1,6 +1,10 @@
-use crate::{channels_models::IrcChannelOperationStatus, errors::InternalIrcError};
+use crate::{
+    channels_models::{ChannelMessage, IrcChannelOperationStatus},
+    errors::InternalIrcError,
+};
 use dashmap::DashMap;
-use std::sync::Arc;
+use log::{debug, info};
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     channels_models::{ChannelName, IrcChannel},
@@ -9,15 +13,14 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
-    pub channels: DashMap<String, Arc<IrcChannel>>,
-    pub users: DashMap<usize, UserState>,
-    // pub registering_users: Arc<DashSet<>>
+    pub channels: Arc<DashMap<String, Arc<IrcChannel>>>,
+    pub users: Arc<DashMap<usize, UserState>>,
 }
 impl ServerState {
     pub fn new() -> Self {
         ServerState {
-            channels: DashMap::<ChannelName, Arc<IrcChannel>>::new(),
-            users: DashMap::<usize, UserState>::new(),
+            channels: Arc::new(DashMap::new()),
+            users: Arc::new(DashMap::new()),
         }
     }
 
@@ -35,16 +38,29 @@ impl ServerState {
     }
 
     fn get_or_create_channel(&self, channel_name: &str) -> (Arc<IrcChannel>, bool) {
-        if let Some(channel) = self.channels.get(channel_name) {
-            return (channel.clone(), false);
+        let is_new = !self.channels.contains_key(channel_name);
+        let channel = self
+            .channels
+            .entry(channel_name.to_owned())
+            .or_insert_with(|| Arc::new(IrcChannel::new(channel_name.to_owned())))
+            .clone();
+
+        if is_new {
+            debug!(
+                "new channel: {} (ptr: {:p}, tx_ptr: {:p})",
+                channel_name,
+                Arc::as_ptr(&channel),
+                &channel.tx
+            );
+        } else {
+            debug!(
+                "existing channel: {} (ptr: {:p}, tx_ptr: {:p})",
+                channel_name,
+                Arc::as_ptr(&channel),
+                &channel.tx
+            );
         }
-        (
-            self.channels
-                .entry(channel_name.to_owned())
-                .or_insert_with(|| Arc::new(IrcChannel::new(channel_name.to_owned())))
-                .clone(),
-            true,
-        )
+        (channel, is_new)
     }
 
     pub async fn handle_join(
@@ -78,6 +94,42 @@ impl ServerState {
             channel.add_operator(client_id);
         }
         Ok((IrcChannelOperationStatus::NewJoin, Some(channel)))
+    }
+
+    pub async fn handle_quit(&self, client_id: usize, reason: Option<String>) {
+        let quit_reason = reason.unwrap_or_else(|| "Client Quit".to_string());
+
+        // 1. Get user details before they are gone
+        if let Some((_, user_state)) = self.users.remove(&client_id) {
+            let caracs = user_state.get_caracs().await;
+            let quit_msg = format!(
+                ":{}!{}@{:?} QUIT :{}",
+                caracs.nick.unwrap(),
+                caracs.user.unwrap(),
+                caracs.addr,
+                quit_reason
+            );
+            let quit_channel_message = ChannelMessage::new(quit_msg);
+
+            // 2. Identify all unique neighbors (people who share channels)
+            let mut neighbors = HashSet::new();
+
+            // iterate through channels user was in
+            for channel_name in caracs.member_of.iter() {
+                if let Some(channel) = self.channels.get(channel_name) {
+                    // Add all members of this channel to our notification list
+                    for member_id in channel.members.iter() {
+                        if *member_id != client_id {
+                            if neighbors.insert(*member_id) {
+                                channel.broadcast_message(quit_channel_message.clone());
+                            }
+                        }
+                    }
+                    // Remove the user from the channel
+                    channel.remove_member(client_id);
+                }
+            }
+        }
     }
 }
 

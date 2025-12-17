@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{debug, error, info};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
@@ -6,7 +6,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
 
 use super::request::handle_request;
-use crate::channels_models::{ChannelMessage, SubscriptionControl};
+use crate::channels_models::SubscriptionControl;
 use crate::errors::InternalIrcError;
 use crate::message_models::IrcMessage;
 use crate::user_state::UserStatus;
@@ -65,7 +65,6 @@ async fn client_reader_task(
         // Asynchronously read one line (ending in \r\n)
         let _bytes_read = match buffered_reader.read_line(&mut line).await {
             Ok(0) | Err(_) => {
-                info!("[{}] Client disconnected.", client_id);
                 // TODO: Handle QUIT/cleanup in ServerState
                 break;
             }
@@ -78,7 +77,14 @@ async fn client_reader_task(
 
         // This call is now handled inside the Reader task:
         match handle_request(request, client_id, &server_state, &user_state).await {
-            Ok(_) => (),
+            Ok(UserStatus::Leaving(reason)) => {
+                info!("[{client_id}] Client Quit with message :{reason:?}");
+                let _ = user_state.tx_status.send(UserStatus::Leaving(reason)).await;
+                info!("[{}] Client disconnected.", client_id);
+                debug!("{server_state:?}");
+                break;
+            }
+            Ok(_) => debug!("{server_state:?}"),
             Err(e) => error!("Err occured while dealing with request {request} with error {e}"),
         }
         // The handler's response logic (writing to the socket) must change!
@@ -93,21 +99,30 @@ async fn client_reader_task(
 async fn client_writer_task(
     mut writer: tokio::io::WriteHalf<TcpStream>,
     client_id: usize,
-    mut rx_outbound: mpsc::Receiver<IrcMessage>, // Targeted replies
-    mut rx_control: mpsc::Receiver<SubscriptionControl>, // Channel management
-    mut rx_status: mpsc::Receiver<UserStatus>, // Channel UserStatus
+    mut rx_outbound: mpsc::Receiver<IrcMessage>,
+    mut rx_control: mpsc::Receiver<SubscriptionControl>,
+    mut rx_status: mpsc::Receiver<UserStatus>,
 ) -> Result<(), std::io::Error> {
-    // Map to hold dynamic channel broadcast receivers
-    let mut channel_subscriptions: HashMap<String, broadcast::Receiver<ChannelMessage>> =
-        HashMap::new();
-    let mut write_err = false;
+    // Single aggregated channel for ALL outgoing messages (broadcast + direct)
+    let (tx_aggregated, mut rx_aggregated) = mpsc::channel::<IrcMessage>(100);
+
+    // Track spawned tasks for cleanup
+    let mut subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
 
     loop {
         tokio::select! {
             Some(msg) = rx_outbound.recv() => {
-                info!(">> out [{client_id}] # {}", &msg.raw_line);
+                info!(">> out [{client_id}] direct # {}", &msg.raw_line);
                 if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
-                    error!("[{}] Failed to write targeted message: {:?}", client_id, e);
+                    error!("[{}] Failed to write: {:?}", client_id, e);
+                    break;
+                }
+            }
+
+            Some(msg) = rx_aggregated.recv() => {
+                info!(">> out [{client_id}] broadcast # {}", &msg.raw_line);
+                if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
+                    error!("[{}] Failed to write: {:?}", client_id, e);
                     break;
                 }
             }
@@ -116,70 +131,58 @@ async fn client_writer_task(
                 match control {
                     SubscriptionControl::Subscribe { channel_name, receiver } => {
                         info!("[{client_id}] Subscribed to: {channel_name}");
-                        channel_subscriptions.insert(channel_name, receiver);
+
+                        // Spawn a task that forwards broadcast messages to aggregated channel
+                        let tx = tx_aggregated.clone();
+                        let name = channel_name.clone();
+                        let client_id_copy = client_id;
+
+                        let handle = tokio::spawn(async move {
+                            let mut rx = receiver;
+                            loop {
+                                match rx.recv().await {
+                                    Ok(channel_msg) => {
+                                        // Convert ChannelMessage to IrcMessage if needed
+                                        let irc_msg = IrcMessage { raw_line: channel_msg.raw_line };
+                                        if tx.send(irc_msg).await.is_err() {
+                                            debug!("[{client_id_copy}] Aggregated channel closed for {name}");
+                                            break;
+                                        }
+                                    }
+                                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                                        error!("[{client_id_copy}] Lagged on {name} by {n}");
+                                    }
+                                    Err(broadcast::error::RecvError::Closed) => {
+                                        info!("[{client_id_copy}] Channel {name} closed");
+                                        break;
+                                    }
+                                }
+                            }
+                        });
+
+                        subscription_tasks.insert(channel_name, handle);
                     }
                     SubscriptionControl::Unsubscribe(name) => {
                         info!("[{client_id}] Unsubscribed from: {name}");
-                        channel_subscriptions.remove(&name);
+                        if let Some(handle) = subscription_tasks.remove(&name) {
+                            handle.abort();
+                        }
                     }
                 }
             }
+
             Some(status) = rx_status.recv() => {
-                // match status {
-                //     todo!()
-                // }
-            }
-
-
-            // else => {
-            //     if write_err { break; } // Break on error
-
-            //     tokio::task::yield_now().await;
-            // }
-        }
-
-        // --- Processing Dynamic Broadcasts (Draining the Receivers) ---
-        let mut messages_to_write = Vec::new();
-        let mut channels_to_remove = Vec::new();
-
-        for (channel_name, receiver) in channel_subscriptions.iter_mut() {
-            match receiver.try_recv() {
-                Ok(msg) => {
-                    messages_to_write.push(msg);
-                }
-                Err(broadcast::error::TryRecvError::Lagged(_)) => {
-                    error!("[{client_id}] Lagged on channel {channel_name}");
-                    // Critical: Client is too slow and missed a message.
-                }
-                Err(broadcast::error::TryRecvError::Closed) => {
-                    // Channel was destroyed (e.g., last user PARTed, server cleanup)
-                    channels_to_remove.push(channel_name.clone());
-                }
-                Err(broadcast::error::TryRecvError::Empty) => {
-                    // Nothing to read, continue.
+                match status {
+                    UserStatus::Leaving(_reason) => break,
+                    _ => ()
                 }
             }
         }
+    }
 
-        // Clean up closed channels
-        for name in channels_to_remove {
-            channel_subscriptions.remove(&name);
-        }
-
-        // Write all collected broadcast messages to the socket
-        if !messages_to_write.is_empty() {
-            for msg in messages_to_write {
-                info!(">> out [{client_id}] # {}", &msg.raw_line);
-                if let Err(e) = writer.write_all(msg.raw_line.as_bytes()).await {
-                    error!("[{client_id}] Failed to write broadcast message: {e:?}");
-                    write_err = true;
-                    break;
-                }
-            }
-            if write_err {
-                break;
-            }
-        }
+    // Cleanup: abort all subscription tasks
+    for (_name, handle) in subscription_tasks {
+        handle.abort();
     }
 
     Err(std::io::Error::new(
