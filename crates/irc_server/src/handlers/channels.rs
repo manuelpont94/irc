@@ -78,19 +78,17 @@ pub async fn handle_join_channel(
             crate::replies::IrcReply::ErrNotRegistered { nick: &nick }.format(),
         ));
     }
+    let mut channel_keys: Vec<Option<String>> = vec![None;channels.len()];
+    if let Some(keys) = keys {
+       for (i, key) in keys.into_iter().enumerate() {
+            channel_keys[i] = Some(key);
+       }
+    } 
+    
     for channel_name in channels {
-        match server_state.handle_join(channel_name, client_id).await {
+        match server_state.handle_join(channel_name, client_id, Some(""),false).await {
             Ok(channel_tx) => {
-                let irc_reply = IrcReply::Join {
-                    nick: &caracs.clone().nick.unwrap_or("".to_owned()),
-                    user: &caracs.clone().user.unwrap_or("".to_owned()),
-                    host: &format!("{}", caracs.addr),
-                    channel: &channel_name,
-                };
-                let welcome_channel_message = ChannelMessage::new(irc_reply.format());
-                channel_tx
-                    .broadcast_message(welcome_channel_message)
-                    .unwrap();
+                todo!()
 
                 // in progress
                 // RPL_TOPIC (Numeric 332): Sent only to the joining user.

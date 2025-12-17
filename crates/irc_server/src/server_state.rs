@@ -1,6 +1,7 @@
 use crate::{
-    channels_models::{IrcChannelOperationStatus, SubscriptionControl},
+    channels_models::{ChannelMessage, IrcChannelOperationStatus, SubscriptionControl},
     errors::InternalIrcError,
+    replies::IrcReply,
 };
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -51,16 +52,24 @@ impl ServerState {
         &self,
         channel_name: String,
         client_id: usize,
+        key: Option<&str>,
+        is_invited: bool,
     ) -> Result<IrcChannelOperationStatus, InternalIrcError> {
         // 1. Get or Create the channel (using the Arc approach)
         let channel = self.get_or_create_channel(&channel_name);
 
         {
             let modes = channel.modes.read().await;
-            // if modes.limit.is_some() && channel.members.len() >= modes.limit.unwrap() as usize {
-            //     return Err("ERR_CHANNELISFULL".to_string());
-            // }
-            // // ... check bans, keys ...
+            if modes.user_limit.is_some() && channel.members.len() >= modes.user_limit.unwrap() {
+                return Ok(IrcChannelOperationStatus::ChannelIsFull);
+            }
+            if modes.ban_list.contains(&client_id) && !modes.except_list.contains(&client_id) {
+                return Ok(IrcChannelOperationStatus::BannedFromChan);
+            }
+            if modes.invite_only && !is_invited {
+                return Ok(IrcChannelOperationStatus::InviteOnlyChan);
+            }
+            // ... check bans, keys ...
         }
 
         if !channel.add_member(client_id) {
@@ -75,6 +84,15 @@ impl ServerState {
                 .ok_or(InternalIrcError::ServerStateError("User not found"))?;
             user.get_caracs().await
         };
+
+        let irc_reply = IrcReply::Join {
+            nick: &user_caracs.clone().nick.unwrap_or("".to_owned()),
+            user: &user_caracs.clone().user.unwrap_or("".to_owned()),
+            host: &format!("{}", user_caracs.addr),
+            channel: &channel_name,
+        };
+        let welcome_channel_message = ChannelMessage::new(irc_reply.format());
+        channel.broadcast_message(welcome_channel_message).unwrap();
 
         // broadcast subscription
         if let Some(user) = self.users.get(&client_id) {
