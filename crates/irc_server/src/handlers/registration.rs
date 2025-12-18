@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::{
     errors::InternalIrcError,
     message_models::IrcMessage,

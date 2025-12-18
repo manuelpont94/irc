@@ -190,6 +190,11 @@ impl<'a> IrcReply<'a> {
                     ":{SERVER_NAME} {ERR_CHANNELISFULL_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
                 )
             }
+            IrcReply::ErrNeedMoreParams { nick, command } => {
+                format!(
+                    ":{SERVER_NAME} {ERR_NEEDMOREPARAMS_NB:03} {nick } {command} :{ERR_NEEDMOREPARAMS_STR}"
+                )
+            }
             _ => todo!("Implement remaining reply variants"),
         }
     }

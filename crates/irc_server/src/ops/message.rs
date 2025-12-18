@@ -5,7 +5,13 @@ use nom::{
     sequence::preceded,
 };
 
-use crate::parsers::{msgtarget_parser, targetmask_parser, trailing_parser};
+use crate::{
+    errors::InternalIrcError,
+    handlers::messages::handle_privmsg,
+    ops::parsers::{msgtarget_parser, targetmask_parser, trailing_parser},
+    server_state::ServerState,
+    user_state::{UserState, UserStatus},
+};
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -77,7 +83,6 @@ impl FromStr for Message {
 
 pub enum IrcMessageSending {
     PRIVMSG(String, String),
-
     NOTICE,
     MOTD,
     VERSION,
@@ -91,9 +96,26 @@ pub enum IrcMessageSending {
 }
 
 impl IrcMessageSending {
-    pub fn irc_message_sending_parser(input: &str) -> IResult<&str, Self> {
+    pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
         let mut parser = alt((valid_privmsg_message_parser,));
         parser.parse(input)
+    }
+
+    pub async fn handle_command(
+        command: &str,
+        _client_id: usize,
+        server_state: &ServerState,
+        user_state: &UserState,
+    ) -> Result<UserStatus, InternalIrcError> {
+        match IrcMessageSending::irc_command_parser(command) {
+            Ok((_rem, valid_commmand)) => match valid_commmand {
+                IrcMessageSending::PRIVMSG(msgtarget, msg) => {
+                    handle_privmsg(msgtarget, msg, server_state, user_state).await
+                }
+                _ => todo!(),
+            },
+            Err(_e) => Err(InternalIrcError::InvalidCommand),
+        }
     }
 }
 

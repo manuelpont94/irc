@@ -14,8 +14,7 @@ use crate::{
         handle_mode_registration, handle_nick_registration, handle_quit_registration,
         handle_user_registration,
     },
-    message::Message,
-    parsers::{
+    ops::parsers::{
         host_parser, hostname_parser, nickname_parser, servername_parser, trailing_parser,
         user_parser,
     },

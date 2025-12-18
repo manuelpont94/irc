@@ -4,7 +4,7 @@ use crate::{
     constants::{ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR},
     errors::InternalIrcError,
     handlers::channels::{handle_invalid_join_channel, handle_join_channel},
-    parsers::{
+    ops::parsers::{
         channel_parser, key_parser, nickname_parser, target_parser, trailing_parser, user_parser,
         wildcards_parser,
     },
@@ -59,12 +59,10 @@ impl IrcChannelOperation {
                 IrcChannelOperation::JOIN(channels_keys) => {
                     handle_join_channel(channels_keys, client_id, server_state, user_state).await
                 }
+                // Ir
                 _ => todo!(),
             },
-            Err(e) => Err(InternalIrcError::ChannelOperations(format!(
-                "{}",
-                e.to_owned()
-            ))),
+            Err(_e) => Err(InternalIrcError::InvalidCommand),
         }
     }
 }
@@ -417,18 +415,8 @@ impl IrcInvalidChannelOperation {
         }
     }
 }
-impl Display for IrcInvalidChannelOperation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 pub fn invalid_join_channel_parser(input: &str) -> IResult<&str, IrcInvalidChannelOperation> {
     let (rem, _) = tag_no_case("JOIN").parse(input)?;
-    Ok((
-        rem,
-        IrcInvalidChannelOperation(format!(
-            "{ERR_NEEDMOREPARAMS_NB} JOIN :{ERR_NEEDMOREPARAMS_STR}",
-        )),
-    ))
+    Ok((rem, IrcInvalidChannelOperation("JOIN".to_string())))
 }

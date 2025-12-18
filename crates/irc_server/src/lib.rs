@@ -1,15 +1,9 @@
-pub mod channel_ops;
 pub mod channels_models;
-pub mod commands;
 pub mod constants;
 pub mod errors;
 pub mod handlers;
-pub mod message;
 pub mod message_models;
-pub mod miscellanneous;
-pub mod parsers;
-pub mod pre_registration;
-pub mod registration;
+pub mod ops;
 pub mod replies;
 pub mod server_state;
 pub mod user_state;

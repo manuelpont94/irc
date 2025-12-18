@@ -115,6 +115,7 @@ pub fn target_parser(input: &str) -> IResult<&str, &str> {
 }
 
 // 01.  msgtarget  =  msgto *( "," msgto )
+// TODO à revoir
 pub fn msgtarget_parser(input: &str) -> IResult<&str, &str> {
     let mut parser = recognize(pair(msgto_parser, many0(preceded(tag(","), msgto_parser))));
     parser.parse(input)

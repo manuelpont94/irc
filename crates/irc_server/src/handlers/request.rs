@@ -1,10 +1,10 @@
 use crate::{
-    channel_ops::{IrcChannelOperation, IrcInvalidChannelOperation},
     errors::InternalIrcError,
     handlers::miscellanneous::IrcUnknownCommand,
-    miscellanneous::IrcMiscellaneousMessages,
-    pre_registration::IrcCapPreRegistration,
-    registration::IrcConnectionRegistration,
+    ops::channel::{IrcChannelOperation, IrcInvalidChannelOperation},
+    ops::miscellanneous::IrcMiscellaneousMessages,
+    ops::pre_registration::IrcCapPreRegistration,
+    ops::registration::IrcConnectionRegistration,
     server_state::ServerState,
     user_state::{UserState, UserStatus},
 };

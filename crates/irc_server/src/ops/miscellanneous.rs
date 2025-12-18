@@ -9,7 +9,7 @@ use nom::{
 use crate::{
     errors::InternalIrcError,
     handlers::miscellanneous::handle_ping,
-    parsers::host_parser,
+    ops::parsers::host_parser,
     user_state::{UserState, UserStatus},
 };
 pub enum IrcMiscellaneousMessages {
