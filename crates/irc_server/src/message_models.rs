@@ -1,10 +1,4 @@
-pub enum Target {
-    Channel(String),
-    Nickname(String),
-    HostNameMask(String),
-    ServerNameMask(String),
-    UseMask(String),
-}
+
 
 #[derive(Debug, Clone)]
 pub struct IrcMessage {

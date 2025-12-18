@@ -9,30 +9,26 @@ use nom::{
 };
 
 use crate::{
-    errors::InternalIrcError,
-    handlers::registration::{
+    errors::InternalIrcError, handlers::registration::{
         handle_mode_registration, handle_nick_registration, handle_quit_registration,
         handle_user_registration,
-    },
-    ops::parsers::{
+    }, ops::parsers::{
         host_parser, hostname_parser, nickname_parser, servername_parser, trailing_parser,
         user_parser,
-    },
-    server_state::ServerState,
-    user_state::{UserState, UserStatus},
+    }, server_state::ServerState, types::Nickname, user_state::{UserState, UserStatus}
 };
 
 #[derive(Debug, PartialEq)]
 pub enum IrcConnectionRegistration {
     PASS(String), // with few tests
-    NICK(String),
+    NICK(Nickname),
     #[allow(non_camel_case_types)]
     USER_RFC_1459(String, String),
     #[allow(non_camel_case_types)]
     USER_RFC_2812(String, u8, String), // with few tests
     OPER(String, String),                 // with few tests
-    MODE(String, Vec<(char, Vec<char>)>), // with few tests
-    SERVICE(String, String, String, String),
+    MODE(Nickname, Vec<(char, Vec<char>)>), // with few tests
+    SERVICE(Nickname, String, String, String),
     QUIT(Option<String>),
     SQUIT(String, String),
 }
@@ -127,8 +123,8 @@ fn valid_password_message_parser(input: &str) -> IResult<&str, IrcConnectionRegi
 
 fn valid_nick_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistration> {
     let mut parser = preceded(tag_no_case("NICK "), nickname_parser);
-    let (rem, parsed) = parser.parse(input)?;
-    Ok((rem, IrcConnectionRegistration::NICK(parsed.to_owned())))
+    let (rem, nick) = parser.parse(input)?;
+    Ok((rem, IrcConnectionRegistration::NICK(nick)))
 }
 
 // 4.1.3 User message RFC1459
@@ -437,7 +433,7 @@ mod tests {
         let input = "NICK Wiz";
         let (rem, nickname) = valid_nick_message_parser(input).unwrap();
         assert!(rem == "");
-        assert_eq!(nickname, IrcConnectionRegistration::NICK("Wiz".to_owned()));
+        assert_eq!(nickname, IrcConnectionRegistration::NICK(Nickname("Wiz".to_owned())));
         let input = "NICK  ";
         assert!(valid_nick_message_parser(input).is_err(), "no nickname");
         let input = "NICK";
@@ -521,21 +517,21 @@ mod tests {
         let (rem, mode) = valid_mode_message_parser(input).unwrap();
         assert_eq!(
             mode,
-            IrcConnectionRegistration::MODE("Wiz".to_owned(), vec![('-', vec!['w'])])
+            IrcConnectionRegistration::MODE(Nickname("Wiz".to_owned()), vec![('-', vec!['w'])])
         );
         assert!(rem == "");
         let input = "MODE Wiz -ow";
         let (rem, mode) = valid_mode_message_parser(input).unwrap();
         assert_eq!(
             mode,
-            IrcConnectionRegistration::MODE("Wiz".to_owned(), vec![('-', vec!['o', 'w'])])
+            IrcConnectionRegistration::MODE(Nickname("Wiz".to_owned()), vec![('-', vec!['o', 'w'])])
         );
         assert!(rem == "");
         let input = "MODE WiZ +w";
         let (rem, mode) = valid_mode_message_parser(input).unwrap();
         assert_eq!(
             mode,
-            IrcConnectionRegistration::MODE("WiZ".to_owned(), vec![('+', vec!['w'])])
+            IrcConnectionRegistration::MODE(Nickname("WiZ".to_owned()), vec![('+', vec!['w'])])
         );
         assert!(rem == "");
         let input = "MODE Bob +i-o";
@@ -543,7 +539,7 @@ mod tests {
         assert_eq!(
             mode,
             IrcConnectionRegistration::MODE(
-                "Bob".to_owned(),
+                Nickname("Bob".to_owned()),
                 vec![('+', vec!['i']), ('-', vec!['o'])]
             )
         );

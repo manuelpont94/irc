@@ -1,15 +1,7 @@
-use std::fmt::Display;
-
 use crate::{
-    constants::{ERR_NEEDMOREPARAMS_NB, ERR_NEEDMOREPARAMS_STR},
-    errors::InternalIrcError,
-    handlers::channels::{handle_invalid_join_channel, handle_join_channel},
-    ops::parsers::{
-        channel_parser, key_parser, nickname_parser, target_parser, trailing_parser, user_parser,
-        wildcards_parser,
-    },
-    server_state::ServerState,
-    user_state::{UserState, UserStatus},
+    errors::InternalIrcError, handlers::channels::{handle_invalid_join_channel, handle_join_channel}, ops::parsers::{
+        channel_parser, key_parser, nickname_parser,  trailing_parser, user_parser,
+    }, server_state::ServerState, types::Nickname, user_state::{UserState, UserStatus}
 };
 use nom::{
     IResult, Parser,
@@ -20,17 +12,18 @@ use nom::{
     multi::{many1, separated_list1},
     sequence::{pair, preceded},
 };
+use crate::types::Channel;
 
 pub enum IrcChannelOperation {
     LEAVE, // JOIN 0 - should be tested befoire JOIN Channel
-    JOIN(Vec<(String, Option<String>)>),
-    PART(Vec<String>, Option<String>),
-    MODE(String, Vec<(char, Vec<char>)>),
-    TOPIC(String, Option<String>),
+    JOIN(Vec<(Channel, Option<String>)>),
+    PART(Vec<Channel>, Option<String>),
+    MODE(Channel, Vec<(char, Vec<char>)>),
+    TOPIC(Channel, Option<String>),
     NAMES(Option<Vec<String>>, Option<String>),
     LIST(Option<Vec<String>>, Option<String>),
-    INVITE(String, String),
-    KICK(Vec<String>, Vec<String>, Option<String>),
+    INVITE(Nickname, Channel),
+    KICK(Vec<Channel>, Vec<String>, Option<String>),
 }
 impl IrcChannelOperation {
     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
@@ -40,8 +33,8 @@ impl IrcChannelOperation {
             valid_part_channel_parser,
             valid_mode_channel_parser,
             valid_topic_channel_parser,
-            valid_names_channel_parser,
-            valid_list_channel_parser,
+            // valid_names_channel_parser,
+            // valid_list_channel_parser,
             valid_invite_channel_parser,
             valid_kick_channel_parser,
         ));
@@ -104,19 +97,15 @@ pub fn valid_join_channel_parser(input: &str) -> IResult<&str, IrcChannelOperati
         ),
     )
     .parse(input)?;
-    let channels = channels
-        .into_iter()
-        .map(str::to_string)
-        .collect::<Vec<String>>();
     let mut opt_keys = vec![None; channels.len()];
     if let Some(keys) = keys {
         keys.into_iter()
             .enumerate()
             .for_each(|(i, v)| opt_keys[i] = Some((*v).to_string()))
     }
-    let channel_keys: Vec<(String, Option<String>)> =
+    let channel_keys: Vec<(Channel, Option<String>)> =
         std::iter::zip(channels, opt_keys).collect::<Vec<_>>();
-    //let keys = keys.iter().enumerate().map(|v| v.into_iter().map(str::to_string).collect::<Vec<String>>());
+
     Ok((rem, IrcChannelOperation::JOIN(channel_keys)))
 }
 
@@ -150,10 +139,6 @@ pub fn valid_part_channel_parser(input: &str) -> IResult<&str, IrcChannelOperati
         ),
     )
     .parse(input)?;
-    let channels = channels
-        .into_iter()
-        .map(str::to_string)
-        .collect::<Vec<String>>();
     let optional_message = optional_message.map(str::to_string);
     Ok((rem, IrcChannelOperation::PART(channels, optional_message)))
 }
@@ -228,7 +213,7 @@ fn valid_mode_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> 
         ),
     )
         .parse(input)?;
-    Ok((rem, IrcChannelOperation::MODE(channel.to_owned(), modes)))
+    Ok((rem, IrcChannelOperation::MODE(channel, modes)))
 }
 
 // 3.2.4 Topic message
@@ -250,7 +235,7 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
     )
         .parse(input)?;
     let topic = topic.map(str::to_owned);
-    Ok((rem, IrcChannelOperation::TOPIC(channel.to_owned(), topic)))
+    Ok((rem, IrcChannelOperation::TOPIC(channel, topic)))
 }
 
 // 3.2.5 Names message
@@ -274,25 +259,25 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
 
 //    Wildcards are allowed in the <target> parameter.
 
-fn valid_names_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
-    let (rem, (_names, params)) = (
-        tag_no_case("NAMES"),
-        opt(preceded(
-            tag(" "),
-            (
-                separated_list1(tag(","), channel_parser),
-                opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
-            ),
-        )),
-    )
-        .parse(input)?;
-    let channels = params
-        .clone()
-        .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
-    let target = params.and_then(|(_, targ)| targ.map(str::to_owned));
-    // let topic = topic.map(str::to_owned);
-    Ok((rem, IrcChannelOperation::NAMES(channels, target)))
-}
+// fn valid_names_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+//     let (rem, (_names, params)) = (
+//         tag_no_case("NAMES"),
+//         opt(preceded(
+//             tag(" "),
+//             (
+//                 separated_list1(tag(","), channel_parser),
+//                 opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
+//             ),
+//         )),
+//     )
+//         .parse(input)?;
+//     let channels = params
+//         .clone()
+//         .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
+//     let target = params.and_then(|(_, targ)| targ.map(str::to_owned));
+//     // let topic = topic.map(str::to_owned);
+//     Ok((rem, IrcChannelOperation::NAMES(channels, target)))
+// }
 
 // 3.2.6 List message
 
@@ -308,24 +293,24 @@ fn valid_names_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
 
 //    Wildcards are allowed in the <target> parameter.
 
-fn valid_list_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
-    let (rem, (_list, params)) = (
-        tag_no_case("LIST"),
-        opt(preceded(
-            tag(" "),
-            (
-                separated_list1(tag(","), channel_parser),
-                opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
-            ),
-        )),
-    )
-        .parse(input)?;
-    let channels = params
-        .clone()
-        .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
-    let target = params.and_then(|(_, targ)| targ.map(str::to_owned));
-    Ok((rem, IrcChannelOperation::LIST(channels, target)))
-}
+// fn valid_list_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
+//     let (rem, (_list, params)) = (
+//         tag_no_case("LIST"),
+//         opt(preceded(
+//             tag(" "),
+//             (
+//                 separated_list1(tag(","), channel_parser),
+//                 opt(preceded(tag(" "), alt((target_parser, wildcards_parser)))),
+//             ),
+//         )),
+//     )
+//         .parse(input)?;
+//     let channels = params
+//         .clone()
+//         .map(|(ch, _)| ch.into_iter().map(str::to_owned).collect::<Vec<String>>());
+//     let target = params.and_then(|(_, targ)| targ.map(str::to_owned));
+//     Ok((rem, IrcChannelOperation::LIST(channels, target)))
+// }
 
 // 3.2.7 Invite message
 
@@ -350,7 +335,7 @@ fn valid_invite_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation
         (preceded(tag_no_case("INVITE "), (nickname_parser, channel_parser))).parse(input)?;
     Ok((
         rem,
-        IrcChannelOperation::INVITE(nickname.to_owned(), channel.to_owned()),
+        IrcChannelOperation::INVITE(nickname, channel),
     ))
 }
 
@@ -381,10 +366,6 @@ fn valid_kick_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> 
         ),
     ))
     .parse(input)?;
-    let channels = channels
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<String>>();
     let users = users
         .into_iter()
         .map(str::to_owned)

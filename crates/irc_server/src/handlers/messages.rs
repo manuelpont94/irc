@@ -1,8 +1,14 @@
 use crate::{
     errors::InternalIrcError,
+    ops::parsers::{
+        channel_parser, 
+        msgto_user_host_server_splitted_parser, msgto_user_host_splitted_parser, nickname_parser,
+        targetmask_parser,
+    },
     server_state::ServerState,
     user_state::{UserState, UserStatus},
 };
+use log::error;
 // 3.3.1 Private messages
 
 //       Command: PRIVMSG
@@ -30,12 +36,62 @@ use crate::{
 //            RPL_AWAY
 
 pub async fn handle_privmsg(
-    msgtarget: String,
+    msgtarget: Vec<String>,
     message: String,
     server_state: &ServerState,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
     // on reparse msgtarger ...
 
-    todo!()
+    for target in msgtarget {
+        match nickname_parser(&target) {
+            Ok((_rem, nick)) => {
+                // private message to nick
+                // if let Some(_target_user_state) = server_state.get_user_by_nick(nick).await {
+                //     // send message to target_user_state
+                // } else {
+                //     // ERR_NOSUCHNICK
+                //     error!("No such nick: {}", nick);
+                // }
+                continue;
+            }
+            Err(_) => {}
+        }
+        match channel_parser(&target) {
+            Ok((_rem, channel_name)) => {
+                // message to channel
+                continue;
+            }
+            Err(_) => {}
+        }
+        match msgto_user_host_splitted_parser(&target) {
+            Ok((_rem, (user, host))) => {
+                // private message to user@host
+                continue;
+            }
+            Err(_) => {}
+        }
+        // match msgto_nick_user_host_splitted_parser(&target) {
+        //     Ok((_rem, (nick, user, host))) => {
+        //         continue;
+        //     }
+        //     Err(_) => {}
+        // }
+        // match msgto_user_host_server_splitted_parser(&target) {
+        //     Ok((_rem, (user, opt_host, server))) => {
+        //         // private message to user@host/server
+        //         continue;
+        //     }
+        //     Err(_) => {}
+        // }
+        // match targetmask_parser(&target) {
+        //     Ok((_rem, _mask)) => {
+        //         // message to hostmask or servermask
+        //         continue;
+        //     }
+        //     Err(_) => {}
+        // }
+        error!("Invalid msgtarget: {target}");
+    }
+    Ok(UserStatus::Active)
 }

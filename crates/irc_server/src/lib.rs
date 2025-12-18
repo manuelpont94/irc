@@ -7,3 +7,4 @@ pub mod ops;
 pub mod replies;
 pub mod server_state;
 pub mod user_state;
+pub mod types;

@@ -1,7 +1,9 @@
 use crate::{
     channels_models::{ChannelMessage, IrcChannelOperationStatus},
     errors::InternalIrcError,
+    user_state,
 };
+use tokio::sync::RwLock;
 use dashmap::DashMap;
 use log::{debug, info};
 use std::{collections::HashSet, sync::Arc};
@@ -15,12 +17,16 @@ use crate::{
 pub struct ServerState {
     pub channels: Arc<DashMap<String, Arc<IrcChannel>>>,
     pub users: Arc<DashMap<usize, UserState>>,
+    pub nick: Arc<DashMap<String, usize>>,
+    pub nick_user_host_server: Arc<DashMap<(String, String, String, String), usize>>,
 }
 impl ServerState {
     pub fn new() -> Self {
         ServerState {
             channels: Arc::new(DashMap::new()),
             users: Arc::new(DashMap::new()),
+            nick: Arc::new(DashMap::new()),
+            nick_user_host_server: Arc::new(DashMap::new()),
         }
     }
 
@@ -35,6 +41,19 @@ impl ServerState {
 
     pub fn channels_exists(&self, channel_name: &str) -> bool {
         self.channels.contains_key(channel_name)
+    }
+
+    pub async fn get_user_nick_map_snapshot(&self) -> Vec<(usize, String)> {
+        let mut nick_map_snapshot = Vec::new();
+        for entry in self.users.iter() {
+            let id_client = *entry.key();
+            let caracs = entry.get_caracs().await;
+            // let caracs = user_state.get_caracs().await;
+            // if let Some(nick) = caracs.nick {
+            //     nick_map_snapshot.push((*id_client, nick));
+            // }
+        }
+        nick_map_snapshot
     }
 
     fn get_or_create_channel(&self, channel_name: &str) -> (Arc<IrcChannel>, bool) {

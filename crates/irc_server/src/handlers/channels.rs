@@ -8,9 +8,10 @@ use crate::{
     server_state::ServerState,
     user_state::{UserState, UserStatus},
 };
+use crate::types::*;
 
 pub async fn handle_join_channel(
-    channels_keys: Vec<(String, Option<String>)>,
+    channels_keys: Vec<(Channel, Option<String>)>,
     client_id: usize,
     server_state: &ServerState,
     user_state: &UserState,
@@ -83,7 +84,7 @@ pub async fn handle_join_channel(
     }
     for (channel_name, key) in channels_keys {
         match server_state
-            .handle_join(channel_name.clone(), client_id, key, false)
+            .handle_join(channel_name.0.clone(), client_id, key, false)
             .await
         {
             Ok((IrcChannelOperationStatus::NewJoin, Some(channel))) => {
@@ -91,13 +92,13 @@ pub async fn handle_join_channel(
                     nick,
                     user,
                     host,
-                    channel: &channel_name,
+                    channel: &channel_name.0,
                 };
                 let rx = channel.subscribe();
                 let _ = user_state
                     .tx_control
                     .send(SubscriptionControl::Subscribe {
-                        channel_name: channel_name.clone(),
+                        channel_name: channel_name.0.clone(),
                         receiver: rx,
                     })
                     .await;
@@ -107,7 +108,7 @@ pub async fn handle_join_channel(
                 if let Some(topic) = potential_topic.as_deref() {
                     let irc_reply = IrcReply::Topic {
                         nick: nick,
-                        channel: &channel_name,
+                        channel: &channel_name.0,
                         topic: topic,
                     };
                     let topic_message = IrcMessage::new(irc_reply.format());
@@ -115,7 +116,7 @@ pub async fn handle_join_channel(
                 } else {
                     let irc_reply = IrcReply::NoTopic {
                         nick: nick,
-                        channel: &channel_name,
+                        channel: &channel_name.0,
                     };
                     let no_topic_message = IrcMessage::new(irc_reply.format());
                     let _ = user_state.tx_outbound.send(no_topic_message).await;
@@ -127,7 +128,7 @@ pub async fn handle_join_channel(
                 // │    RPL_ENDOFNAMES (366)
                 let irc_reply = IrcReply::Names {
                     nick: nick,
-                    channel: &channel_name,
+                    channel: &channel_name.0,
                     visibility: &visibility,
                     names: &member_list,
                 };
@@ -135,36 +136,36 @@ pub async fn handle_join_channel(
                 let _ = user_state.tx_outbound.send(channel_names).await;
                 let irc_reply = IrcReply::EndOfName {
                     nick,
-                    channel: &channel_name,
+                    channel: &channel_name.0,
                 };
                 let channel_end_of_names = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(channel_end_of_names).await;
-                user_state.join_channel(&channel_name).await
+                user_state.join_channel(&channel_name.0).await
             }
             Ok((IrcChannelOperationStatus::ChannelIsFull, None)) => {
                 let irc_reply = IrcReply::ErrChannelIsFull {
-                    channel: &channel_name,
+                    channel: &channel_name.0,
                 };
                 let err_channel_is_full = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(err_channel_is_full).await;
             }
             Ok((IrcChannelOperationStatus::BannedFromChan, None)) => {
                 let irc_reply = IrcReply::ErrBannedFromChan {
-                    channel: &channel_name,
+                    channel: &channel_name.0,
                 };
                 let err_banned_from_chan = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(err_banned_from_chan).await;
             }
             Ok((IrcChannelOperationStatus::InviteOnlyChan, None)) => {
                 let irc_reply = IrcReply::ErrInviteOnlyChan {
-                    channel: &channel_name,
+                    channel: &channel_name.0,
                 };
                 let err_invite_only_chan = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(err_invite_only_chan).await;
             }
             Ok((IrcChannelOperationStatus::BadChannelKey, None)) => {
                 let irc_reply = IrcReply::ErrBadChannelKey {
-                    channel: &channel_name,
+                    channel: &channel_name.0,
                 };
                 let err_bad_channel_key = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(err_bad_channel_key).await;

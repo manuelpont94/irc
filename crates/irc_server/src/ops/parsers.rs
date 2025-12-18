@@ -8,6 +8,8 @@ use nom::{
     sequence::{pair, preceded},
 };
 
+use crate::types::{Channel, Hostname, Ip4Addr, Ip6Addr, IpAddr, Nickname, Host};
+
 // 2.3.1 Message format in Augmented BNF
 
 //    The protocol messages must be extracted from the contiguous stream of
@@ -66,6 +68,18 @@ pub fn wildcards_parser(input: &str) -> IResult<&str, &str> {
     alt((tag("#"), tag("?"))).parse(input)
 }
 
+// pub enum MessageType {
+//     MsgTo(MessageDestinary) )
+
+// }
+
+// enum MessageDestinary{
+//     Channel(...),
+//     User(Option<Host>, ServerName)
+// }
+
+
+
 // 00.  target     =  nickname / server
 // 01.  msgtarget  =  msgto *( "," msgto )
 // 02.  msgto      =  channel / ( user [ "%" host ] "@" servername )
@@ -109,17 +123,17 @@ fn hexdigit(input: &str) -> IResult<&str, &str> {
 }
 
 // 00.  target     =  nickname / server
-pub fn target_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = alt((nickname_parser, servername_parser));
-    parser.parse(input)
-}
+// pub fn target_parser(input: &str) -> IResult<&str, &str> {
+//     let mut parser = alt((nickname_parser, servername_parser));
+//     parser.parse(input)
+// }
 
 // 01.  msgtarget  =  msgto *( "," msgto )
 // TODO à revoir
-pub fn msgtarget_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize(pair(msgto_parser, many0(preceded(tag(","), msgto_parser))));
-    parser.parse(input)
-}
+// pub fn msgtarget_parser(input: &str) -> IResult<&str, &str> {
+//     let mut parser = recognize(pair(msgto_parser, many0(preceded(tag(","), msgto_parser))));
+//     parser.parse(input)
+// }
 
 // 02.  msgto      =  channel / ( user [ "%" host ] "@" servername )
 //      msgto      =/ ( user "%" host ) / targetmask
@@ -134,8 +148,24 @@ fn msgto_user_host_server_parser(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
+pub fn msgto_user_host_server_splitted_parser(
+    input: &str,
+) -> IResult<&str, (&str, Option<&str>, &str)> {
+    let mut parser = (
+        user_parser,
+        opt(preceded(tag("%"), host_parser)),
+        preceded(tag("@"), servername_parser),
+    );
+    parser.parse(input)
+}
+
 fn msgto_user_host_parser(input: &str) -> IResult<&str, &str> {
     let mut parser = recognize((user_parser, tag("%"), host_parser));
+    parser.parse(input)
+}
+
+pub fn msgto_user_host_splitted_parser(input: &str) -> IResult<&str, (&str, &str)> {
+    let mut parser = (user_parser, preceded(tag("%"), host_parser));
     parser.parse(input)
 }
 
@@ -150,17 +180,26 @@ fn msgto_nick_user_host_parser(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
-pub fn msgto_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = alt((
-        channel_parser,
-        msgto_user_host_server_parser,
-        msgto_user_host_parser,
-        targetmask_parser,
-        msgto_nick_user_host_parser,
+pub fn msgto_nick_user_host_splitted_parser(input: &str) -> IResult<&str, (Nickname, &str, Host)> {
+    let mut parser = (
         nickname_parser,
-    ));
+        preceded(tag("!"), user_parser),
+        preceded(tag("@"), host_parser),
+    );
     parser.parse(input)
 }
+
+// pub fn msgto_parser(input: &str) -> IResult<&str, &str> {
+//     let mut parser = alt((
+//         channel_parser,
+//         msgto_user_host_server_parser,
+//         msgto_user_host_parser,
+//         targetmask_parser,
+//         msgto_nick_user_host_parser,
+//         nickname_parser,
+//     ));
+//     parser.parse(input)
+// }
 
 // 03.  channel    =  ( "#" / "+" / ( "!" channelid ) / "&" ) chanstring
 //                 [ ":" chanstring ]
@@ -175,30 +214,31 @@ fn channel_prefix_parser(input: &str) -> IResult<&str, &str> {
 }
 
 // channel = ( "#" / "+" / ( "!" channelid ) / "&" ) chanstring [ ":" chanstring ]
-pub fn channel_parser(input: &str) -> IResult<&str, &str> {
+pub fn channel_parser(input: &str) -> IResult<&str, Channel> {
     let mut parser = recognize((
         channel_prefix_parser,
         chanstring_parser,
         opt(preceded(tag(":"), chanstring_parser)),
     ));
-    parser.parse(input)
+    let (rem, channel) = parser.parse(input)?;
+    Ok((rem, Channel(channel.to_owned())))
 }
 
 // 04.  servername =  hostname
-pub fn servername_parser(input: &str) -> IResult<&str, &str> {
+pub fn servername_parser(input: &str) -> IResult<&str, Hostname> {
     hostname_parser(input) // earlier definition
 }
 
 // 05.  host       =  hostname / hostaddr
 // host = hostname / hostaddr
-pub fn host_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = alt((hostname_parser, hostaddr_parser));
+pub fn host_parser(input: &str) -> IResult<&str, Host> {
+    let mut parser = alt((hostname_parser.map(|h| Host::Hostname(h) ), hostaddr_parser.map(|ip| Host::IpAddr(ip))));
     parser.parse(input)
 }
 
 // 06.  hostname   =  shortname *( "." shortname )
 // hostname = shortname *( "." shortname )
-pub fn hostname_parser(input: &str) -> IResult<&str, &str> {
+pub fn hostname_parser(input: &str) -> IResult<&str, Hostname> {
     let mut parser = verify(
         recognize((
             shortname_parser,
@@ -206,7 +246,8 @@ pub fn hostname_parser(input: &str) -> IResult<&str, &str> {
         )),
         |s: &str| s.len() <= 63,
     );
-    parser.parse(input)
+    let (rem, shortname) = parser.parse(input)?;
+    Ok((rem, Hostname(shortname.to_owned())))
 }
 
 // 07.  shortname  =  ( letter / digit ) *( letter / digit / "-" )
@@ -229,8 +270,8 @@ pub fn shortname_parser(input: &str) -> IResult<&str, &str> {
 
 // 08.  hostaddr   =  ip4addr / ip6addr
 // hostaddr = ip4addr / ip6addr
-pub fn hostaddr_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = alt((ip4addr_parser, ip6addr_parser));
+pub fn hostaddr_parser(input: &str) -> IResult<&str, IpAddr> {
+    let mut parser = alt((ip4addr_parser.map(|ip| IpAddr::Ip4Addr(ip)), ip6addr_parser.map(|ip| IpAddr::Ip6Addr(ip))));
     parser.parse(input)
 }
 
@@ -240,7 +281,7 @@ fn ip4_octet_parser(input: &str) -> IResult<&str, &str> {
     take_while_m_n(1, 3, |c: char| c.is_ascii_digit())(input)
 }
 
-fn ip4addr_parser(input: &str) -> IResult<&str, &str> {
+fn ip4addr_parser(input: &str) -> IResult<&str, Ip4Addr> {
     let mut parser = recognize((
         ip4_octet_parser,
         tag("."),
@@ -250,7 +291,8 @@ fn ip4addr_parser(input: &str) -> IResult<&str, &str> {
         tag("."),
         ip4_octet_parser,
     ));
-    parser.parse(input)
+    let (rem, ip) = parser.parse(input)?;
+    Ok((rem, Ip4Addr(ip.to_owned()) ))
 }
 
 // 10.  ip6addr    =  1*hexdigit 7( ":" 1*hexdigit )
@@ -279,9 +321,10 @@ fn ip6addr_ipv4_compat_parser(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
-fn ip6addr_parser(input: &str) -> IResult<&str, &str> {
+fn ip6addr_parser(input: &str) -> IResult<&str, Ip6Addr> {
     let mut parser = alt((ip6addr_ipv4_compat_parser, ip6addr_normal_parser));
-    parser.parse(input)
+    let (rem, ip) = parser.parse(input)?;
+    Ok((rem, Ip6Addr(ip.to_owned())))
 }
 
 // 11.  nickname   =  ( letter / special ) *8( letter / digit / special / "-" )
@@ -294,7 +337,7 @@ fn is_nickname_first_char(c: char) -> bool {
     c.is_ascii_alphabetic() || "-[]\\`^{}".contains(c)
 }
 
-pub fn nickname_parser(input: &str) -> IResult<&str, &str> {
+pub fn nickname_parser(input: &str) -> IResult<&str, Nickname> {
     // First char: letter OR special
     let first = satisfy(is_nickname_first_char);
 
@@ -305,15 +348,17 @@ pub fn nickname_parser(input: &str) -> IResult<&str, &str> {
     let parser = recognize(pair(first, tail));
 
     // Enforce max length = 9
-    verify(parser, |s: &str| s.len() <= 9).parse(input) // first char control ensure that no empty string can be valid
+    let (rem, nick) = verify(parser, |s: &str| s.len() <= 9).parse(input)?; // first char control ensure that no empty string can be valid
+    let nickname = Nickname(nick.to_string());
+    Ok((rem, nickname))
 }
 
 // 12.  targetmask =  ( "$" / "#" ) mask
 //                   ; see details on allowed masks in section 3.3.1
-// fn mask_parser(input: &str) -> IResult<&str, &str> {
-//     // Placeholder — ask me if you need full mask rules!
-//     take_while1(|c: char| c != ' ' && c != ',')(input)
-// }
+fn mask_parser(input: &str) -> IResult<&str, &str> {
+    // Placeholder — ask me if you need full mask rules!
+    take_while1(|c: char| c != ' ' && c != ',')(input)
+}
 /// Checks if a character is a valid mask character according to RFC 2812.
 /// Must be:
 /// 1. Not NUL, CR, LF (standard line endings)
@@ -349,30 +394,30 @@ pub fn targetmask_parser(input: &str) -> IResult<&str, &str> {
     // 1. Structure Check: Parse the mask as segments separated by dots.
     // We use recognize to get the full matched string slice, which is guaranteed
     // to be structurally correct (segments separated by dots) and free of disallowed IRC chars.
-    let (rem, full_mask) =         // 2. Semantic Check: Apply the two RFC constraints using `verify`.
-        verify(
-            recognize(separated_list1(char('.'), mask_segment)),
-            |mask_str: &str| {
-                // Constraint 1: Must contain at least one dot.
-                // `separated_list1` already enforces this, but a direct check is fine.
-                let has_dot = mask_str.contains('.');
+    // 2. Semantic Check: Apply the two RFC constraints using `verify`.
+    let (rem, full_mask) = verify(
+        recognize(separated_list1(char('.'), mask_segment)),
+        |mask_str: &str| {
+            // Constraint 1: Must contain at least one dot.
+            // `separated_list1` already enforces this, but a direct check is fine.
+            let has_dot = mask_str.contains('.');
 
-                // // Constraint 2: No wildcards after the last dot.
-                let is_last_segment_valid = match mask_str.rfind('.') {
-                    Some(index) => {
-                        let post_dot_segment = &mask_str[index + 1..];
-                        // Check if *any* character in the segment is a wildcard.
-                        !post_dot_segment.chars().any(is_wildcard)
-                    }
-                    None => false, // Should be unreachable if has_dot is true, but safe.
-                };
+            // // Constraint 2: No wildcards after the last dot.
+            let is_last_segment_valid = match mask_str.rfind('.') {
+                Some(index) => {
+                    let post_dot_segment = &mask_str[index + 1..];
+                    // Check if *any* character in the segment is a wildcard.
+                    !post_dot_segment.chars().any(is_wildcard)
+                }
+                None => false, // Should be unreachable if has_dot is true, but safe.
+            };
 
-                // Both constraints must be true for a valid RFC 2812 host/server mask.
-                has_dot && is_last_segment_valid
-                // false
-            },
-        )
-        .parse(input)?;
+            // Both constraints must be true for a valid RFC 2812 host/server mask.
+            has_dot && is_last_segment_valid
+            // false
+        },
+    )
+    .parse(input)?;
     Ok((rem, full_mask))
 }
 
@@ -477,7 +522,7 @@ mod tests {
         for &case in &cases {
             let (rest, out) = nickname_parser(case).expect(&format!("Should parse: {case}"));
             assert_eq!(rest, "");
-            assert_eq!(out, case);
+            assert_eq!(out, Nickname(case.to_owned()));
         }
     }
 
@@ -497,7 +542,7 @@ mod tests {
     fn test_partial_parse() {
         // valid prefix, then an invalid char later
         let (rest, out) = nickname_parser("abc!def").unwrap();
-        assert_eq!(out, "abc");
+        assert_eq!(out, Nickname("abc".to_owned()));
         assert_eq!(rest, "!def");
     }
 

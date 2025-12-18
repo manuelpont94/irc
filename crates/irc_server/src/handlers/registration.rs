@@ -1,9 +1,5 @@
 use crate::{
-    errors::InternalIrcError,
-    message_models::IrcMessage,
-    replies::IrcReply,
-    server_state::ServerState,
-    user_state::{UserState, UserStatus},
+    errors::InternalIrcError, message_models::IrcMessage, replies::IrcReply, server_state::ServerState, types::Nickname, user_state::{UserState, UserStatus}
 };
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;
@@ -104,12 +100,12 @@ pub fn handle_cap_end_response() -> Result<UserStatus, InternalIrcError> {
 //    NICK command is used to give user a nickname or change the existing
 //    one.
 pub async fn handle_nick_registration(
-    nick: String,
+    nick: Nickname,
     _client_id: usize,
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
-    user_state.with_nick(nick).await;
+    user_state.with_nick(nick.0).await;
     when_registered(user_state, server_state).await
 }
 
@@ -152,11 +148,11 @@ pub async fn when_registered(
 }
 
 pub async fn handle_mode_registration(
-    nick: String,
+    nick: Nickname,
     modes: Vec<(char, Vec<char>)>,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
-    match user_state.with_modes(&nick, modes).await {
+    match user_state.with_modes(&nick.0, modes).await {
         Ok(Some(status)) => {
             let status_message = IrcMessage::new(status.format());
             let _ = user_state.tx_outbound.send(status_message);
