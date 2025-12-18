@@ -1,7 +1,11 @@
+use crate::types::{Channel, Username};
 use crate::{
-    errors::InternalIrcError, handlers::channels::{handle_invalid_join_channel, handle_join_channel}, ops::parsers::{
-        channel_parser, key_parser, nickname_parser,  trailing_parser, user_parser,
-    }, server_state::ServerState, types::Nickname, user_state::{UserState, UserStatus}
+    errors::InternalIrcError,
+    handlers::channels::{handle_invalid_join_channel, handle_join_channel},
+    ops::parsers::{channel_parser, key_parser, nickname_parser, trailing_parser, user_parser},
+    server_state::ServerState,
+    types::Nickname,
+    user_state::{UserState, UserStatus},
 };
 use nom::{
     IResult, Parser,
@@ -12,7 +16,6 @@ use nom::{
     multi::{many1, separated_list1},
     sequence::{pair, preceded},
 };
-use crate::types::Channel;
 
 pub enum IrcChannelOperation {
     LEAVE, // JOIN 0 - should be tested befoire JOIN Channel
@@ -23,7 +26,7 @@ pub enum IrcChannelOperation {
     NAMES(Option<Vec<String>>, Option<String>),
     LIST(Option<Vec<String>>, Option<String>),
     INVITE(Nickname, Channel),
-    KICK(Vec<Channel>, Vec<String>, Option<String>),
+    KICK(Vec<Channel>, Vec<Username>, Option<String>),
 }
 impl IrcChannelOperation {
     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
@@ -333,10 +336,7 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
 fn valid_invite_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> {
     let (rem, (nickname, channel)) =
         (preceded(tag_no_case("INVITE "), (nickname_parser, channel_parser))).parse(input)?;
-    Ok((
-        rem,
-        IrcChannelOperation::INVITE(nickname, channel),
-    ))
+    Ok((rem, IrcChannelOperation::INVITE(nickname, channel)))
 }
 
 // 3.2.8 Kick command
@@ -366,10 +366,6 @@ fn valid_kick_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation> 
         ),
     ))
     .parse(input)?;
-    let users = users
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<String>>();
     let comment = comment.map(str::to_owned);
     Ok((rem, IrcChannelOperation::KICK(channels, users, comment)))
 }

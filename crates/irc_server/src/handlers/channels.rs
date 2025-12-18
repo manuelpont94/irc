@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::types::*;
 use crate::{
     channels_models::{ChannelMessage, IrcChannel, IrcChannelOperationStatus, SubscriptionControl},
     errors::InternalIrcError,
@@ -8,7 +9,6 @@ use crate::{
     server_state::ServerState,
     user_state::{UserState, UserStatus},
 };
-use crate::types::*;
 
 pub async fn handle_join_channel(
     channels_keys: Vec<(Channel, Option<String>)>,
@@ -69,13 +69,13 @@ pub async fn handle_join_channel(
     // First JOINer gets +o
 
     let caracs = user_state.get_caracs().await;
-    let nick = &caracs.clone().nick.unwrap_or("*".to_owned());
-    let user = &caracs.clone().user.unwrap_or("*".to_owned());
+    let nick = caracs.clone().nick.unwrap_or(Nickname("*".to_owned()));
+    let user = caracs.clone().user.unwrap_or(Username("*".to_owned()));
     let host = &format!("{}", caracs.addr);
     if !caracs.registered {
         let nick = match caracs.nick {
-            Some(nick) => nick.clone(),
-            None => "*".to_owned(),
+            Some(nick) => nick,
+            None => Nickname("*".to_owned()),
         };
         let irc_reply = IrcReply::ErrNotRegistered { nick: &nick };
         let not_registered_message = IrcMessage::new(irc_reply.format());
@@ -89,8 +89,8 @@ pub async fn handle_join_channel(
         {
             Ok((IrcChannelOperationStatus::NewJoin, Some(channel))) => {
                 let irc_reply = IrcReply::Join {
-                    nick,
-                    user,
+                    nick: &nick,
+                    user: &user.0,
                     host,
                     channel: &channel_name.0,
                 };
@@ -107,7 +107,7 @@ pub async fn handle_join_channel(
                 let potential_topic = channel.topic.read().await;
                 if let Some(topic) = potential_topic.as_deref() {
                     let irc_reply = IrcReply::Topic {
-                        nick: nick,
+                        nick: &nick,
                         channel: &channel_name.0,
                         topic: topic,
                     };
@@ -115,7 +115,7 @@ pub async fn handle_join_channel(
                     let _ = user_state.tx_outbound.send(topic_message).await;
                 } else {
                     let irc_reply = IrcReply::NoTopic {
-                        nick: nick,
+                        nick: &nick,
                         channel: &channel_name.0,
                     };
                     let no_topic_message = IrcMessage::new(irc_reply.format());
@@ -127,7 +127,7 @@ pub async fn handle_join_channel(
                 // │    RPL_NAMREPLY (353)
                 // │    RPL_ENDOFNAMES (366)
                 let irc_reply = IrcReply::Names {
-                    nick: nick,
+                    nick: &nick,
                     channel: &channel_name.0,
                     visibility: &visibility,
                     names: &member_list,
@@ -135,7 +135,7 @@ pub async fn handle_join_channel(
                 let channel_names = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(channel_names).await;
                 let irc_reply = IrcReply::EndOfName {
-                    nick,
+                    nick: &nick,
                     channel: &channel_name.0,
                 };
                 let channel_end_of_names = IrcMessage::new(irc_reply.format());
@@ -250,7 +250,7 @@ async fn handle_names_reply(
                 ""
             };
             let user_caracs = user.user.read().await;
-            let nick = user_caracs.nick.as_deref().unwrap();
+            let nick = user_caracs.nick.as_ref().unwrap().clone();
             member_list.push_str(&format!("{prefix}{nick} "));
         }
     }
@@ -265,7 +265,7 @@ pub async fn handle_invalid_join_channel(
     let nick = if user_caracs.registered {
         user_caracs.nick.unwrap().clone()
     } else {
-        "*".to_string()
+        Nickname("*".to_string())
     };
     let irc_reply = IrcReply::ErrNeedMoreParams {
         nick: &nick,

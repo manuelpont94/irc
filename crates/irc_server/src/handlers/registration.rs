@@ -1,5 +1,10 @@
 use crate::{
-    errors::InternalIrcError, message_models::IrcMessage, replies::IrcReply, server_state::ServerState, types::Nickname, user_state::{UserState, UserStatus}
+    errors::InternalIrcError,
+    message_models::IrcMessage,
+    replies::IrcReply,
+    server_state::ServerState,
+    types::{Nickname, Realname, Username},
+    user_state::{UserState, UserStatus},
 };
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;
@@ -23,7 +28,7 @@ pub async fn handle_cap_ls_response(
     let nick = if user_caracs.registered {
         user_caracs.nick.unwrap().clone()
     } else {
-        "*".to_string()
+        Nickname("*".to_string())
     };
     let irc_reply = IrcReply::CapLs {
         nick: &nick,
@@ -33,7 +38,7 @@ pub async fn handle_cap_ls_response(
     let _ = user_state.tx_outbound.send(cap_list_message).await;
     // :server CAP * LS :chghost echo-message extended-join invite-notify
     // :server CAP * LS :message-tags multi-prefix sasl
-    if &nick != "*" {
+    if &nick != &Nickname("*".to_owned()) {
         Ok(UserStatus::Handshaking)
     } else {
         Ok(UserStatus::Active)
@@ -54,7 +59,7 @@ pub async fn handle_cap_list_response(
     let nick = if user_caracs.registered {
         user_caracs.nick.unwrap().clone()
     } else {
-        "*".to_string()
+        Nickname("*".to_string())
     };
     let irc_reply = IrcReply::CapList {
         nick: &nick,
@@ -64,7 +69,7 @@ pub async fn handle_cap_list_response(
     let _ = user_state.tx_outbound.send(cap_list_message).await;
     // :server CAP * LS :chghost echo-message extended-join invite-notify
     // :server CAP * LS :message-tags multi-prefix sasl
-    if &nick != "*" {
+    if &nick != &Nickname("*".to_owned()) {
         Ok(UserStatus::Handshaking)
     } else {
         Ok(UserStatus::Active)
@@ -105,19 +110,19 @@ pub async fn handle_nick_registration(
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
-    user_state.with_nick(nick.0).await;
+    user_state.with_nick(nick).await;
     when_registered(user_state, server_state).await
 }
 
 pub async fn handle_user_registration(
-    user_name: String,
+    user_name: Username,
     mode: u8,
-    full_user_name: String,
+    real_name: Realname,
     _client_id: usize,
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
-    user_state.with_user(user_name, full_user_name, mode).await;
+    user_state.with_user(user_name, real_name, mode).await;
     when_registered(user_state, server_state).await
 }
 
@@ -130,13 +135,12 @@ pub async fn when_registered(
         let nick = user_data.nick.unwrap();
         let user = user_data.user.unwrap();
         let host = user_data.addr;
-        let host_str = format!("{host:?}");
         server_state.add_connecting_user(user_state).await?;
         let welcome_message = IrcMessage::new(
             IrcReply::Welcome {
                 nick: &nick,
-                user: &user,
-                host: &host_str,
+                user: &format!("{user}"),
+                host: &format!("{host:?}"),
             }
             .format(),
         );
@@ -152,7 +156,7 @@ pub async fn handle_mode_registration(
     modes: Vec<(char, Vec<char>)>,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
-    match user_state.with_modes(&nick.0, modes).await {
+    match user_state.with_modes(&nick, modes).await {
         Ok(Some(status)) => {
             let status_message = IrcMessage::new(status.format());
             let _ = user_state.tx_outbound.send(status_message);

@@ -10,11 +10,12 @@ use crate::{
     errors::InternalIrcError,
     handlers::miscellanneous::handle_ping,
     ops::parsers::host_parser,
+    types::Host,
     user_state::{UserState, UserStatus},
 };
 pub enum IrcMiscellaneousMessages {
     KILL,
-    PING(Vec<String>),
+    PING(Vec<Host>),
     PONG,
     ERROR,
 }
@@ -42,9 +43,5 @@ impl IrcMiscellaneousMessages {
 pub fn valid_ping_parser(input: &str) -> IResult<&str, IrcMiscellaneousMessages> {
     let (rem, servers) =
         preceded(tag_no_case("PING"), many1(preceded(tag(" "), host_parser))).parse(input)?;
-    let servers = servers
-        .iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<String>>();
     Ok((rem, IrcMiscellaneousMessages::PING(servers)))
 }

@@ -9,13 +9,18 @@ use nom::{
 };
 
 use crate::{
-    errors::InternalIrcError, handlers::registration::{
+    errors::InternalIrcError,
+    handlers::registration::{
         handle_mode_registration, handle_nick_registration, handle_quit_registration,
         handle_user_registration,
-    }, ops::parsers::{
+    },
+    ops::parsers::{
         host_parser, hostname_parser, nickname_parser, servername_parser, trailing_parser,
         user_parser,
-    }, server_state::ServerState, types::Nickname, user_state::{UserState, UserStatus}
+    },
+    server_state::ServerState,
+    types::{Host, Nickname, Realname, Username},
+    user_state::{UserState, UserStatus},
 };
 
 #[derive(Debug, PartialEq)]
@@ -23,14 +28,14 @@ pub enum IrcConnectionRegistration {
     PASS(String), // with few tests
     NICK(Nickname),
     #[allow(non_camel_case_types)]
-    USER_RFC_1459(String, String),
+    USER_RFC_1459(Username, Realname),
     #[allow(non_camel_case_types)]
-    USER_RFC_2812(String, u8, String), // with few tests
-    OPER(String, String),                 // with few tests
+    USER_RFC_2812(Username, u8, Realname), // with few tests
+    OPER(String, String),                   // with few tests
     MODE(Nickname, Vec<(char, Vec<char>)>), // with few tests
     SERVICE(Nickname, String, String, String),
     QUIT(Option<String>),
-    SQUIT(String, String),
+    SQUIT(Host, String),
 }
 
 impl IrcConnectionRegistration {
@@ -167,7 +172,10 @@ fn valid_user_message_rfc1459_parser(input: &str) -> IResult<&str, IrcConnection
 
     Ok((
         rem,
-        IrcConnectionRegistration::USER_RFC_1459(username.to_owned(), realname.to_owned()),
+        IrcConnectionRegistration::USER_RFC_1459(
+            username.to_owned(),
+            Realname(realname.to_owned()),
+        ),
     ))
 }
 
@@ -215,7 +223,7 @@ fn valid_user_message_rfc2812_parser(input: &str) -> IResult<&str, IrcConnection
 
     Ok((
         rem,
-        IrcConnectionRegistration::USER_RFC_2812(username.to_owned(), mode, realname.to_owned()),
+        IrcConnectionRegistration::USER_RFC_2812(username, mode, Realname(realname.to_owned())),
     ))
 }
 
@@ -305,10 +313,7 @@ fn valid_mode_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistra
         ),
     )
         .parse(input)?;
-    Ok((
-        rem,
-        IrcConnectionRegistration::MODE(nickname.to_owned(), modes),
-    ))
+    Ok((rem, IrcConnectionRegistration::MODE(nickname, modes)))
 }
 
 // 3.1.6 Service message
@@ -398,7 +403,7 @@ fn valid_squit_message_parser(input: &str) -> IResult<&str, IrcConnectionRegistr
     // todo!()
     Ok((
         rem,
-        IrcConnectionRegistration::SQUIT(server.to_owned(), comment.to_owned()),
+        IrcConnectionRegistration::SQUIT(server, comment.to_owned()),
     ))
 }
 
@@ -433,7 +438,10 @@ mod tests {
         let input = "NICK Wiz";
         let (rem, nickname) = valid_nick_message_parser(input).unwrap();
         assert!(rem == "");
-        assert_eq!(nickname, IrcConnectionRegistration::NICK(Nickname("Wiz".to_owned())));
+        assert_eq!(
+            nickname,
+            IrcConnectionRegistration::NICK(Nickname("Wiz".to_owned()))
+        );
         let input = "NICK  ";
         assert!(valid_nick_message_parser(input).is_err(), "no nickname");
         let input = "NICK";
@@ -458,9 +466,9 @@ mod tests {
         assert_eq!(
             nickname,
             IrcConnectionRegistration::USER_RFC_2812(
-                "guest".to_owned(),
+                Username("guest".to_owned()),
                 0_u8,
-                "Ronnie Reagan".to_owned()
+                Realname("Ronnie Reagan".to_owned())
             )
         );
         let input = "USER guest 8 * :Ronnie Reagan";
@@ -469,9 +477,9 @@ mod tests {
         assert_eq!(
             nickname,
             IrcConnectionRegistration::USER_RFC_2812(
-                "guest".to_owned(),
+                Username("guest".to_owned()),
                 8_u8,
-                "Ronnie Reagan".to_owned()
+                Realname("Ronnie Reagan".to_owned())
             )
         );
         let input = "USER guest * :Ronnie Reagan";
@@ -524,7 +532,10 @@ mod tests {
         let (rem, mode) = valid_mode_message_parser(input).unwrap();
         assert_eq!(
             mode,
-            IrcConnectionRegistration::MODE(Nickname("Wiz".to_owned()), vec![('-', vec!['o', 'w'])])
+            IrcConnectionRegistration::MODE(
+                Nickname("Wiz".to_owned()),
+                vec![('-', vec!['o', 'w'])]
+            )
         );
         assert!(rem == "");
         let input = "MODE WiZ +w";

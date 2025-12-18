@@ -1,5 +1,6 @@
 use crate::channels_models::{ChannelName, SubscriptionControl};
 use crate::replies::IrcReply;
+use crate::types::{Nickname, Realname, Username};
 use crate::{errors::InternalIrcError, message_models::IrcMessage};
 use core::net::SocketAddr;
 use dashmap::DashSet;
@@ -35,10 +36,10 @@ pub enum UserStatus {
 #[derive(Debug)]
 pub struct User {
     pub user_id: usize,
-    pub nick: Option<String>,
-    pub user: Option<String>,
+    pub nick: Option<Nickname>,
+    pub user: Option<Username>,
     pub modes: HashSet<char>,
-    pub full_user_name: Option<String>,
+    pub real_name: Option<Realname>,
     pub registered: AtomicBool,
     pub addr: SocketAddr,
     pub member_of: DashSet<ChannelName>,
@@ -47,10 +48,10 @@ pub struct User {
 #[derive(Debug, Clone)]
 pub struct UserSnapshot {
     pub user_id: usize,
-    pub nick: Option<String>,
-    pub user: Option<String>,
+    pub nick: Option<Nickname>,
+    pub user: Option<Username>,
     pub modes: HashSet<char>,
-    pub full_user_name: Option<String>,
+    pub real_name: Option<Realname>,
     pub registered: bool,
     pub addr: SocketAddr,
     pub member_of: HashSet<ChannelName>,
@@ -63,7 +64,7 @@ impl User {
             nick: None,
             user: None,
             modes: HashSet::new(),
-            full_user_name: None,
+            real_name: None,
             registered: AtomicBool::new(false),
             addr,
             member_of: DashSet::new(),
@@ -93,15 +94,15 @@ impl UserState {
         }
     }
 
-    pub async fn with_nick(&self, nick: String) {
+    pub async fn with_nick(&self, nick: Nickname) {
         let mut client = self.user.write().await;
         client.nick = Some(nick);
     }
 
-    pub async fn with_user(&self, user: String, full_user_name: String, mode: u8) {
+    pub async fn with_user(&self, user: Username, real_name: Realname, mode: u8) {
         let mut user_data = self.user.write().await;
         user_data.user = Some(user);
-        user_data.full_user_name = Some(full_user_name);
+        user_data.real_name = Some(real_name);
         user_data.modes = UserState::parse_basic_user_mode(mode);
     }
 
@@ -154,7 +155,7 @@ impl UserState {
             nick: user_data.nick.clone(),
             user: user_data.user.clone(),
             modes: user_data.modes.clone(),
-            full_user_name: user_data.full_user_name.clone(),
+            real_name: user_data.real_name.clone(),
             registered: user_data.registered.load(Ordering::Acquire),
             addr: user_data.addr,
             member_of,
@@ -163,7 +164,7 @@ impl UserState {
 
     pub async fn with_modes<'a>(
         &self,
-        nick: &'a str,
+        nick: &'a Nickname,
         modes: Vec<(char, Vec<char>)>,
     ) -> Result<Option<IrcReply<'a>>, InternalIrcError> {
         // known_modes :
@@ -179,15 +180,15 @@ impl UserState {
             .iter()
             .all(|(f, ms)| (*f == '-' || *f == '+') && ms.iter().all(|m| KNOWN_MODES.contains(m)));
         if !modes_are_valid {
-            return Ok(Some(IrcReply::ErrUModeUnknownFlag { nick }));
+            return Ok(Some(IrcReply::ErrUModeUnknownFlag { nick: nick }));
         }
         let mut user_data = self.user.write().await;
         if !user_data.registered.load(Ordering::Acquire) {
             Err(InternalIrcError::UserStateError(
                 "Cannot change of an unregistered user",
             ))
-        } else if user_data.nick != Some(nick.to_owned()) {
-            Ok(Some(IrcReply::ErrUsersDontMatch { nick }))
+        } else if user_data.nick != Some(nick.clone()) {
+            Ok(Some(IrcReply::ErrUsersDontMatch { nick: nick }))
         } else {
             let current_flags = user_data.modes.clone();
             let mut new_user_mode_flags: HashSet<char> = current_flags.clone();

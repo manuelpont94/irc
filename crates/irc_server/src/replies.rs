@@ -1,4 +1,4 @@
-use crate::constants::*;
+use crate::{constants::*, types::Nickname};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
@@ -8,16 +8,16 @@ pub enum IrcReply<'a> {
     },
     // Capabilities
     CapLs {
-        nick: &'a str,
+        nick: &'a Nickname,
         capabilities: &'a str,
     },
     CapList {
-        nick: &'a str,
+        nick: &'a Nickname,
         capabilities: &'a str,
     },
     // Connection registration
     Welcome {
-        nick: &'a str,
+        nick: &'a Nickname,
         user: &'a str,
         host: &'a str,
     },
@@ -36,40 +36,40 @@ pub enum IrcReply<'a> {
 
     // User modes
     UModeIs {
-        nick: &'a str,
+        nick: &'a Nickname,
         modes: &'a str,
     },
     ErrUModeUnknownFlag {
-        nick: &'a str,
+        nick: &'a Nickname,
     },
     ErrUsersDontMatch {
-        nick: &'a str,
+        nick: &'a Nickname,
     },
 
     // Channel operations
     Join {
-        nick: &'a str,
+        nick: &'a Nickname,
         user: &'a str,
         host: &'a str,
         channel: &'a str,
     },
     Topic {
-        nick: &'a str,
+        nick: &'a Nickname,
         channel: &'a str,
         topic: &'a str,
     },
     NoTopic {
-        nick: &'a str,
+        nick: &'a Nickname,
         channel: &'a str,
     },
     Names {
-        nick: &'a str,
+        nick: &'a Nickname,
         channel: &'a str,
         visibility: &'a str,
         names: &'a str,
     },
     EndOfName {
-        nick: &'a str,
+        nick: &'a Nickname,
         channel: &'a str,
     },
     List {
@@ -81,21 +81,21 @@ pub enum IrcReply<'a> {
 
     // Errors
     ErrNeedMoreParams {
-        nick: &'a str,
+        nick: &'a Nickname,
         command: &'a str,
     },
     ErrUnknownCommand {
-        nick: &'a str,
+        nick: &'a Nickname,
         command: &'a str,
     },
     ErrNoSuchNick {
-        nick: &'a str,
+        nick: &'a Nickname,
     },
     ErrNoSuchChannel {
         channel: &'a str,
     },
     ErrNotRegistered {
-        nick: &'a str,
+        nick: &'a Nickname,
     },
     ErrBannedFromChan {
         channel: &'a str,

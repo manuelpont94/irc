@@ -8,7 +8,7 @@ use nom::{
     sequence::{pair, preceded},
 };
 
-use crate::types::{Channel, Hostname, Ip4Addr, Ip6Addr, IpAddr, Nickname, Host};
+use crate::types::{Channel, Host, Hostname, Ip4Addr, Ip6Addr, IpAddr, Nickname, Username};
 
 // 2.3.1 Message format in Augmented BNF
 
@@ -77,8 +77,6 @@ pub fn wildcards_parser(input: &str) -> IResult<&str, &str> {
 //     Channel(...),
 //     User(Option<Host>, ServerName)
 // }
-
-
 
 // 00.  target     =  nickname / server
 // 01.  msgtarget  =  msgto *( "," msgto )
@@ -150,7 +148,7 @@ fn msgto_user_host_server_parser(input: &str) -> IResult<&str, &str> {
 
 pub fn msgto_user_host_server_splitted_parser(
     input: &str,
-) -> IResult<&str, (&str, Option<&str>, &str)> {
+) -> IResult<&str, (Username, Option<Host>, Hostname)> {
     let mut parser = (
         user_parser,
         opt(preceded(tag("%"), host_parser)),
@@ -164,7 +162,7 @@ fn msgto_user_host_parser(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
-pub fn msgto_user_host_splitted_parser(input: &str) -> IResult<&str, (&str, &str)> {
+pub fn msgto_user_host_splitted_parser(input: &str) -> IResult<&str, (Username, Host)> {
     let mut parser = (user_parser, preceded(tag("%"), host_parser));
     parser.parse(input)
 }
@@ -180,7 +178,9 @@ fn msgto_nick_user_host_parser(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
-pub fn msgto_nick_user_host_splitted_parser(input: &str) -> IResult<&str, (Nickname, &str, Host)> {
+pub fn msgto_nick_user_host_splitted_parser(
+    input: &str,
+) -> IResult<&str, (Nickname, Username, Host)> {
     let mut parser = (
         nickname_parser,
         preceded(tag("!"), user_parser),
@@ -232,7 +232,10 @@ pub fn servername_parser(input: &str) -> IResult<&str, Hostname> {
 // 05.  host       =  hostname / hostaddr
 // host = hostname / hostaddr
 pub fn host_parser(input: &str) -> IResult<&str, Host> {
-    let mut parser = alt((hostname_parser.map(|h| Host::Hostname(h) ), hostaddr_parser.map(|ip| Host::IpAddr(ip))));
+    let mut parser = alt((
+        hostname_parser.map(|h| Host::Hostname(h)),
+        hostaddr_parser.map(|ip| Host::IpAddr(ip)),
+    ));
     parser.parse(input)
 }
 
@@ -271,7 +274,10 @@ pub fn shortname_parser(input: &str) -> IResult<&str, &str> {
 // 08.  hostaddr   =  ip4addr / ip6addr
 // hostaddr = ip4addr / ip6addr
 pub fn hostaddr_parser(input: &str) -> IResult<&str, IpAddr> {
-    let mut parser = alt((ip4addr_parser.map(|ip| IpAddr::Ip4Addr(ip)), ip6addr_parser.map(|ip| IpAddr::Ip6Addr(ip))));
+    let mut parser = alt((
+        ip4addr_parser.map(|ip| IpAddr::Ip4Addr(ip)),
+        ip6addr_parser.map(|ip| IpAddr::Ip6Addr(ip)),
+    ));
     parser.parse(input)
 }
 
@@ -292,7 +298,7 @@ fn ip4addr_parser(input: &str) -> IResult<&str, Ip4Addr> {
         ip4_octet_parser,
     ));
     let (rem, ip) = parser.parse(input)?;
-    Ok((rem, Ip4Addr(ip.to_owned()) ))
+    Ok((rem, Ip4Addr(ip.to_owned())))
 }
 
 // 10.  ip6addr    =  1*hexdigit 7( ":" 1*hexdigit )
@@ -470,8 +476,10 @@ fn is_user_char(c: char) -> bool {
 }
 
 /// Parses "user" according to the ABNF rule.
-pub fn user_parser(input: &str) -> IResult<&str, &str> {
-    take_while1(is_user_char).parse(input)
+pub fn user_parser(input: &str) -> IResult<&str, Username> {
+    let mut parser = take_while1(is_user_char);
+    let (rem, user) = parser.parse(input)?;
+    Ok((rem, Username(user.to_owned())))
 }
 
 // 16.  key        =  1*23( %x01-05 / %x07-08 / %x0C / %x0E-1F / %x21-7F )
@@ -565,7 +573,7 @@ mod tests {
             let (rest, out) =
                 user_parser(case).unwrap_or_else(|_| panic!("should parse: {case:?}"));
             assert_eq!(rest, "");
-            assert_eq!(out, case);
+            assert_eq!(out, Username(case.to_owned()));
         }
     }
 
@@ -588,7 +596,7 @@ mod tests {
     #[test]
     fn stops_on_invalid_middle() {
         let (rest, out) = user_parser("foo bar").unwrap();
-        assert_eq!(out, "foo");
+        assert_eq!(out, Username("foo".to_owned()));
         assert_eq!(rest, " bar");
     }
 
@@ -600,7 +608,7 @@ mod tests {
         // multi-byte anywhere stops parsing
         let (rest, out) = user_parser("abc☃def")
             .unwrap_or_else(|_| panic!("should partially parse ASCII prefix"));
-        assert_eq!(out, "abc");
+        assert_eq!(out, Username("abc".to_owned()));
         assert_eq!(rest, "☃def");
     }
 

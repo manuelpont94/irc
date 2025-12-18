@@ -2,6 +2,7 @@ use crate::{
     errors::InternalIrcError,
     message_models::IrcMessage,
     replies::IrcReply,
+    types::{Host, Nickname},
     user_state::{UserState, UserStatus},
 };
 use nom::{IResult, Parser, bytes::complete::take_till};
@@ -40,11 +41,11 @@ use nom::{IResult, Parser, bytes::complete::take_till};
 //                                    "irc.funet.fi"
 
 pub async fn handle_ping(
-    server: Vec<String>,
+    server: Vec<Host>,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
     let irc_reply = IrcReply::Pong {
-        destination: &server[0],
+        destination: &format!("{}", server[0]),
     };
     let pong_message = IrcMessage::new(irc_reply.format());
     let _ = user_state.tx_outbound.send(pong_message).await;
@@ -66,7 +67,7 @@ impl IrcUnknownCommand {
                 let nick = if user_caracs.registered {
                     user_caracs.nick.unwrap().clone()
                 } else {
-                    "*".to_string()
+                    Nickname("*".to_string())
                 };
                 let irc_reply = IrcReply::ErrUnknownCommand {
                     nick: &nick,
@@ -74,7 +75,7 @@ impl IrcUnknownCommand {
                 };
                 let unknown_command_message = IrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(unknown_command_message).await;
-                if &nick != "*" {
+                if &nick != &Nickname("*".to_owned()) {
                     Ok(UserStatus::Handshaking)
                 } else {
                     Ok(UserStatus::Active)
