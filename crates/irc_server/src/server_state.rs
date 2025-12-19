@@ -138,7 +138,6 @@ impl ServerState {
     pub async fn handle_quit(&self, client_id: ClientId, reason: Option<String>) {
         let quit_reason = reason.unwrap_or_else(|| "Client Quit".to_string());
 
-        // 1. Get user details before they are gone
         if let Some((_, user_state)) = self.users.remove(&client_id) {
             let caracs = user_state.get_caracs().await;
             let quit_msg = format!(
@@ -162,6 +161,10 @@ impl ServerState {
                         }
                     }
                     channel.remove_member(client_id);
+                    if channel.members.is_empty() {
+                        info!("Channel {channel_name} is empty, destroying.");
+                        self.channels.remove(channel_name);
+                    }
                 }
             }
         }

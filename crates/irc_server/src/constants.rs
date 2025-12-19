@@ -6,6 +6,9 @@ pub const SERVER_NAME: &str = "192.168.1.34";
 pub const RPL_WELCOME_NB: u16 = 1;
 pub const RPL_WELCOME_STR: &str = "Welcome to the Internet Relay Network";
 
+// for Query User MODE
+pub const RPL_UMODEIS_NB: u16 = 221;
+
 // 331    RPL_NOTOPIC
 //        "<channel> :No topic is set"
 pub const RPL_NOTOPIC_NB: u16 = 331;
@@ -31,6 +34,15 @@ pub const RPL_ENDOFNAMES_STR: &str = "End of NAMES list";
 //           "<command> :Unknown command"
 pub const ERR_UNKNOWNCOMMAND_NB: u16 = 421;
 pub const ERR_UNKNOWNCOMMAND_STR: &str = "Unknown command";
+
+// 433    ERR_NICKNAMEINUSE
+//               "<nick> :Nickname is already in use"
+
+//          - Returned when a NICK message is processed that results
+//            in an attempt to change to a currently existing
+//            nickname.
+pub const ERR_NICKNAMEINUSE_NB: u16 = 421;
+pub const ERR_NICKNAMEINUSE_STR: &str = "Nickname is already in use";
 
 // 451    ERR_NOTREGISTERED
 //               ":You have not registered"
@@ -75,9 +87,6 @@ pub const ERR_UMODEUNKNOWNFLAG_STR: &str = "Unknown MODE flag";
 
 pub const ERR_USERSDONTMATCH_NB: u16 = 502;
 pub const ERR_USERSDONTMATCH_STR: &str = "Cannot change mode for other users";
-
-// for Query User MODE
-pub const RPL_UMODEIS_NB: u16 = 221;
 
 // ERR_NEEDMOREPARAMS
 //                ERR_BADCHANMASK

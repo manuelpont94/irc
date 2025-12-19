@@ -110,8 +110,14 @@ pub async fn handle_nick_registration(
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
-    user_state.with_nick(nick).await;
-    when_registered(user_state, server_state).await
+    let nick_already_exists = server_state.nick.contains_key(&nick);
+    if nick_already_exists {
+        // 433 ERR_NICKNAMEINUSE
+        todo!()
+    } else {
+        user_state.with_nick(nick).await;
+        when_registered(user_state, server_state).await
+    }
 }
 
 pub async fn handle_user_registration(
