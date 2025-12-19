@@ -24,6 +24,7 @@ pub enum IrcReply<'a> {
         user: &'a Username,
         host: &'a str,
     },
+
     YourHost {
         servername: &'a str,
         version: &'a str,
@@ -217,6 +218,12 @@ impl<'a> IrcReply<'a> {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum MessageReply<'a> {
+    UpdateNick {
+        old_nick: &'a Nickname,
+        new_nick: &'a Nickname,
+        user: &'a Username,
+        host: &'a str,
+    },
     BroadcastJoinMsg {
         nick: &'a Nickname,
         user: &'a Username,
@@ -275,6 +282,12 @@ impl<'a> MessageReply<'a> {
                 channel,
                 message,
             } => format!(":{nick_from}!{user_from}@{host_from} PART {channel} {message}"),
+            MessageReply::UpdateNick {
+                old_nick,
+                new_nick,
+                user,
+                host,
+            } => format!(":{old_nick}!{user}@{host} NICK :{new_nick}"),
         }
     }
 }

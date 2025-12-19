@@ -1,7 +1,7 @@
 use crate::{
     channels_models::{IrcChannel, IrcChannelOperationStatus},
     errors::InternalIrcError,
-    message_models::BroadcastIrcMessage,
+    message_models::{BroadcastIrcMessage, DirectIrcMessage},
     types::{ChannelName, ClientId, Nickname},
     user_state::UserState,
 };
@@ -37,6 +37,17 @@ impl ServerState {
         }
         self.users.insert(user_id, user_state.clone());
         Ok(user_id)
+    }
+
+    pub fn handle_nick_change(
+        &self,
+        client_id: ClientId,
+        new_nick: &Nickname,
+        old_nick: &Nickname,
+    ) {
+        // 3. Update the global Nick -> ClientId map
+        self.nick.remove(old_nick);
+        self.nick.insert(new_nick.clone(), client_id);
     }
 
     pub fn channels_exists(&self, channel_name: &ChannelName) -> bool {
@@ -158,25 +169,53 @@ impl ServerState {
                 caracs.addr,
                 quit_reason
             );
-            let quit_channel_message = BroadcastIrcMessage::new(quit_msg);
-            let mut neighbors = HashSet::new();
+            let quit_channel_message = DirectIrcMessage::new(quit_msg);
+            self.broadcast_to_neighbors(&caracs.member_of, quit_channel_message, Some(client_id))
+                .await;
             for channel_name in caracs.member_of.iter() {
                 let channel_opt = self.channels.get(channel_name).map(|r| Arc::clone(&r));
-
                 if let Some(channel) = channel_opt {
-                    for member_id in channel.members.iter() {
-                        if *member_id != client_id {
-                            if neighbors.insert(*member_id) {
-                                channel.broadcast_message(quit_channel_message.clone());
-                            }
-                        }
-                    }
                     channel.remove_member(&client_id);
                     if channel.members.is_empty() {
                         info!("Channel {channel_name} is empty, destroying.");
                         self.channels.remove(channel_name);
                     }
                 }
+            }
+        }
+    }
+
+    async fn get_unique_neighboors(
+        &self,
+        channel_names: &HashSet<ChannelName>,
+        exclude_id: Option<ClientId>, //
+    ) -> HashSet<ClientId> {
+        let mut unique_neighbors = HashSet::new();
+        for name in channel_names {
+            let channel_opt = self.channels.get(name).map(|r| Arc::clone(&r));
+            if let Some(channel) = channel_opt {
+                for member_id in channel.members.iter() {
+                    let id = *member_id;
+                    if Some(id) != exclude_id {
+                        unique_neighbors.insert(id);
+                    }
+                }
+            }
+        }
+        unique_neighbors
+    }
+
+    pub async fn broadcast_to_neighbors(
+        &self,
+        channel_names: &HashSet<ChannelName>,
+        message: DirectIrcMessage,
+        exclude_id: Option<ClientId>, // Usually the person changing NICK
+    ) {
+        let unique_neighbors = self.get_unique_neighboors(channel_names, exclude_id).await;
+        for client_id in unique_neighbors {
+            let user_opt = self.users.get(&client_id).map(|r| r.clone());
+            if let Some(user_state) = user_opt {
+                let _ = user_state.tx_outbound.send(message.clone()).await;
             }
         }
     }

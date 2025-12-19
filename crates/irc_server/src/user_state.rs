@@ -94,9 +94,11 @@ impl UserState {
         }
     }
 
-    pub async fn with_nick(&self, nick: Nickname) {
+    pub async fn with_nick(&self, nick: Nickname) -> Option<Nickname> {
         let mut client = self.user.write().await;
+        let old_nick = client.nick.clone();
         client.nick = Some(nick);
+        old_nick
     }
 
     pub async fn with_user(&self, user: Username, real_name: Realname, mode: u8) {

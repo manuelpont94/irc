@@ -3,10 +3,10 @@ use log::error;
 use crate::{
     errors::InternalIrcError,
     message_models::DirectIrcMessage,
-    replies::IrcReply,
+    replies::{IrcReply, MessageReply},
     server_state::ServerState,
     types::{ClientId, Nickname, Realname, Username},
-    user_state::{UserState, UserStatus},
+    user_state::{self, UserState, UserStatus},
 };
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;
@@ -126,9 +126,48 @@ pub async fn handle_nick_registration(
         let _ = user_state.tx_outbound.send(dm).await;
         Ok(UserStatus::Active)
     } else {
-        user_state.with_nick(nick).await;
-        when_registered(user_state, server_state).await
+        let old_nick_opt = user_state.with_nick(nick.clone()).await;
+        if old_nick_opt.is_some() && user_state.is_registered().await {
+            update_nick(
+                &old_nick_opt.unwrap(),
+                &nick,
+                client_id,
+                server_state,
+                user_state,
+            )
+            .await
+        } else if user_state.is_registered().await {
+            when_registered(user_state, server_state).await
+        } else {
+            Ok(UserStatus::Handshaking)
+        }
     }
+}
+
+pub async fn update_nick(
+    old_nick: &Nickname,
+    new_nick: &Nickname,
+    client_id: ClientId,
+    server_state: &ServerState,
+    user_state: &UserState,
+) -> Result<UserStatus, InternalIrcError> {
+    let _ = server_state.handle_nick_change(client_id, new_nick, old_nick);
+    let user_caracs = user_state.get_caracs().await;
+    let user = &user_caracs.user.unwrap();
+    let host = &format!("{}", user_caracs.addr);
+    let message = DirectIrcMessage::new(
+        MessageReply::UpdateNick {
+            old_nick,
+            new_nick,
+            user,
+            host,
+        }
+        .format(),
+    );
+    server_state
+        .broadcast_to_neighbors(&user_caracs.member_of, message, None)
+        .await;
+    Ok(UserStatus::Active)
 }
 
 pub async fn handle_user_registration(
@@ -140,32 +179,32 @@ pub async fn handle_user_registration(
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
     user_state.with_user(user_name, real_name, mode).await;
-    when_registered(user_state, server_state).await
+    if user_state.is_registered().await {
+        when_registered(user_state, server_state).await
+    } else {
+        Ok(UserStatus::Handshaking)
+    }
 }
 
 pub async fn when_registered(
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
-    if user_state.is_registered().await {
-        let user_data = user_state.get_caracs().await;
-        let nick = user_data.nick.unwrap();
-        let user = user_data.user.unwrap();
-        let host = user_data.addr;
-        server_state.add_connecting_user(user_state).await?;
-        let welcome_message = DirectIrcMessage::new(
-            IrcReply::Welcome {
-                nick: &nick,
-                user: &user,
-                host: &format!("{host:?}"),
-            }
-            .format(),
-        );
-        let _ = user_state.tx_outbound.send(welcome_message).await;
-        Ok(UserStatus::Active)
-    } else {
-        Ok(UserStatus::Handshaking)
-    }
+    let user_data = user_state.get_caracs().await;
+    let nick = user_data.nick.unwrap();
+    let user = user_data.user.unwrap();
+    let host = user_data.addr;
+    server_state.add_connecting_user(user_state).await?;
+    let welcome_message = DirectIrcMessage::new(
+        IrcReply::Welcome {
+            nick: &nick,
+            user: &user,
+            host: &format!("{host:?}"),
+        }
+        .format(),
+    );
+    let _ = user_state.tx_outbound.send(welcome_message).await;
+    Ok(UserStatus::Active)
 }
 
 pub async fn handle_mode_registration(
