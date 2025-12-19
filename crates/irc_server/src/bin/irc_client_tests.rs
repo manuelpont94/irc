@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn run_client(id: usize, addr: &str, interval: u64) -> io::Result<()> {
     let mut stream = TcpStream::connect(addr).await?;
-    let nick = format!("bot_{}", id);
+    let nick = format!("bot{}", id);
 
     // 1. Handshake
     let login = format!("NICK {}\r\nUSER {} 0 * :LoadTester\r\n", nick, nick);
