@@ -3,10 +3,10 @@ use std::sync::Arc;
 use crate::types::*;
 use crate::{
     channels_models::{
-        BroadcastIrcMessage, IrcChannel, IrcChannelOperationStatus, SubscriptionControl,
+     IrcChannel, IrcChannelOperationStatus, SubscriptionControl,
     },
     errors::InternalIrcError,
-    message_models::DirectIrcMessage,
+    message_models::{DirectIrcMessage, BroadcastIrcMessage},
     replies::IrcReply,
     server_state::ServerState,
     user_state::{UserState, UserStatus},

@@ -2,7 +2,7 @@ use dashmap::DashSet;
 use log::{error, info};
 use tokio::sync::{RwLock, broadcast};
 
-use crate::types::{ChannelName, ClientId, Topic};
+use crate::{message_models::BroadcastIrcMessage, types::{ChannelName, ClientId, Topic}};
 
 /// Control message sent from Server Broker to a Client Writer Task
 pub enum SubscriptionControl {
@@ -13,22 +13,7 @@ pub enum SubscriptionControl {
     Unsubscribe(ChannelName),
 }
 
-#[derive(Debug, Clone)]
-pub struct BroadcastIrcMessage {
-    pub raw_line: String,
-}
-impl BroadcastIrcMessage {
-    pub fn new(line: String) -> Self {
-        let final_line = if line.ends_with("\r\n") {
-            line
-        } else {
-            format!("{line}\r\n")
-        };
-        BroadcastIrcMessage {
-            raw_line: final_line,
-        }
-    }
-}
+
 
 #[derive(Debug, Clone)]
 pub enum ChannelType {

@@ -1,8 +1,9 @@
 use crate::{
-    channels_models::{BroadcastIrcMessage, IrcChannel, IrcChannelOperationStatus},
+    channels_models::{IrcChannel, IrcChannelOperationStatus},
     errors::InternalIrcError,
     types::{ChannelName, ClientId},
     user_state::UserState,
+    message_models::BroadcastIrcMessage,
 };
 use dashmap::DashMap;
 use log::{debug, info};
