@@ -6,5 +6,5 @@ pub mod message_models;
 pub mod ops;
 pub mod replies;
 pub mod server_state;
-pub mod user_state;
 pub mod types;
+pub mod user_state;

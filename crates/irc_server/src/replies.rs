@@ -50,12 +50,6 @@ pub enum IrcReply<'a> {
     },
 
     // Channel operations
-    Join {
-        nick: &'a Nickname,
-        user: &'a Username,
-        host: &'a str,
-        channel: &'a ChannelName,
-    },
     Topic {
         nick: &'a Nickname,
         channel: &'a ChannelName,
@@ -136,12 +130,7 @@ impl<'a> IrcReply<'a> {
             } => format!(
                 ":{SERVER_NAME} {RPL_WELCOME_NB:03} {nick} :{RPL_WELCOME_STR} {nick}!{user}@{host}"
             ),
-            IrcReply::Join {
-                nick,
-                user,
-                host,
-                channel,
-            } => format!(":{nick}!{user}@{host} JOIN :{channel}"),
+
             IrcReply::UModeIs { nick, modes } => {
                 format!(":{SERVER_NAME} {RPL_UMODEIS_NB:03} {nick} :{modes}")
             }
@@ -199,6 +188,57 @@ impl<'a> IrcReply<'a> {
                 )
             }
             _ => todo!("Implement remaining reply variants"),
+        }
+    }
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
+pub enum MessageReply<'a> {
+    BroadcastJoin {
+        nick: &'a Nickname,
+        user: &'a Username,
+        host: &'a str,
+        channel: &'a ChannelName,
+    },
+    NicknamePrivMsg {
+        nick_from: &'a Nickname,
+        user_from: &'a Username,
+        host_from: &'a str,
+        nick_to: &'a Nickname,
+        message: &'a str,
+    },
+    ChannelPrivMsg {
+        nick_from: &'a Nickname,
+        user_from: &'a Username,
+        host_from: &'a str,
+        channel: &'a ChannelName,
+        message: &'a str,
+    },
+}
+impl<'a> MessageReply<'a> {
+    pub fn format(&self) -> String {
+        match self {
+            MessageReply::BroadcastJoin {
+                nick,
+                user,
+                host,
+                channel,
+            } => format!(":{nick}!{user}@{host} JOIN :{channel}"),
+            MessageReply::NicknamePrivMsg {
+                nick_from,
+                user_from,
+                host_from,
+                nick_to,
+                message,
+            } => format!(":{nick_from}!{user_from}@{host_from} PRIVMSG {nick_to} :{message}"),
+            MessageReply::ChannelPrivMsg {
+                nick_from,
+                user_from,
+                host_from,
+                channel,
+                message,
+            } => format!(":{nick_from}!{user_from}@{host_from} PRIVMSG {channel} :{message}"),
         }
     }
 }

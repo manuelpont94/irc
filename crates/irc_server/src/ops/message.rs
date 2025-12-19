@@ -11,7 +11,7 @@ use crate::{
     handlers::messages::handle_privmsg,
     ops::parsers::{msgtarget_parser, targetmask_parser, trailing_parser},
     server_state::ServerState,
-    types::MessageTo,
+    types::{ClientId, MessageTo},
     user_state::{UserState, UserStatus},
 };
 use std::str::FromStr;
@@ -105,14 +105,14 @@ impl IrcMessageSending {
 
     pub async fn handle_command(
         command: &str,
-        _client_id: usize,
+        client_id: ClientId,
         server_state: &ServerState,
         user_state: &UserState,
     ) -> Result<UserStatus, InternalIrcError> {
         match IrcMessageSending::irc_command_parser(command) {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcMessageSending::PRIVMSG(msgtarget, msg) => {
-                    handle_privmsg(msgtarget, msg, server_state, user_state).await
+                    handle_privmsg(msgtarget, msg, client_id, server_state, user_state).await
                 }
                 _ => todo!(),
             },

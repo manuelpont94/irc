@@ -1,7 +1,9 @@
 use crate::{
     errors::InternalIrcError,
+    message_models::{BroadcastIrcMessage, DirectIrcMessage},
+    replies::MessageReply,
     server_state::ServerState,
-    types::MessageTo,
+    types::{ClientId, MessageTo},
     user_state::{UserState, UserStatus},
 };
 use log::error;
@@ -34,17 +36,51 @@ use log::error;
 pub async fn handle_privmsg(
     msgtarget: Vec<MessageTo>,
     message: String,
+    client_id: ClientId,
     server_state: &ServerState,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
-    // on reparse msgtarger ...
+    let caracs = user_state.get_caracs().await;
+    let nick_from = caracs.nick.unwrap();
+    let user_from = caracs.user.unwrap();
+    let host_from = format!("{}", caracs.addr);
 
     for target in msgtarget {
         match target {
-            MessageTo::ChannelName(c) => todo!(),
+            MessageTo::ChannelName(channel) => {
+                let irc_channel_opt = server_state.get_channel(&channel).map(|r| r.clone());
+                if let Some(irc_channel) = irc_channel_opt {
+                    let mrep = MessageReply::ChannelPrivMsg {
+                        nick_from: &nick_from,
+                        user_from: &user_from,
+                        host_from: &host_from,
+                        channel: &channel,
+                        message: &message,
+                    };
+                    let broadcast_irc_message =
+                        BroadcastIrcMessage::new_with_sender(mrep.format(), client_id);
+                    let _ = irc_channel.broadcast_message(broadcast_irc_message);
+                }
+                //todo faire le else :)
+            }
             MessageTo::NickUserHost(_nuh) => error!("PRIVMSG to NickUserHost not implemented yet"),
-            MessageTo::Nickname(n) => todo!(),
-            MessageTo::UserHostServer(_uhs) => todo!(),
+            MessageTo::Nickname(nick_to) => {
+                if let Some(user_state_dest) = server_state.get_user_state_from_nick(&nick_to) {
+                    let mrep = MessageReply::NicknamePrivMsg {
+                        nick_from: &nick_from,
+                        user_from: &user_from,
+                        host_from: &host_from,
+                        nick_to: &nick_to,
+                        message: &message,
+                    };
+                    let direct_irc_message = DirectIrcMessage::new(mrep.format());
+                    let _ = user_state_dest.tx_outbound.send(direct_irc_message).await;
+                }
+                //todo faire le else :)
+            }
+            MessageTo::UserHostServer(_uhs) => {
+                error!("PRIVMSG to UserHostServer not implemented yet")
+            }
             MessageTo::UserHost(_uh) => error!("PRIVMSG to UserHost not implemented yet"),
             MessageTo::TargetMask(_tm) => error!("PRIVMSG to TargetMask not implemented yet"),
         }

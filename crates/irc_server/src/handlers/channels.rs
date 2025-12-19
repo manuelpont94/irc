@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
+use crate::replies::MessageReply;
 use crate::types::*;
 use crate::{
-    channels_models::{
-     IrcChannel, IrcChannelOperationStatus, SubscriptionControl,
-    },
+    channels_models::{IrcChannel, IrcChannelOperationStatus, SubscriptionControl},
     errors::InternalIrcError,
-    message_models::{DirectIrcMessage, BroadcastIrcMessage},
+    message_models::{BroadcastIrcMessage, DirectIrcMessage},
     replies::IrcReply,
     server_state::ServerState,
     user_state::{UserState, UserStatus},
@@ -90,7 +89,7 @@ pub async fn handle_join_channel(
             .await
         {
             Ok((IrcChannelOperationStatus::NewJoin, Some(channel))) => {
-                let irc_reply = IrcReply::Join {
+                let irc_reply = MessageReply::BroadcastJoin {
                     nick: &nick,
                     user: &user,
                     host,
@@ -243,7 +242,11 @@ async fn handle_names_reply(
         .collect::<Vec<ClientId>>();
 
     for client_id in channel_members {
-        if let Some(user) = server_state.users.get(&client_id) {
+        // Use .map to clone the UserState out and drop the Ref immediately
+        let user_state_opt = server_state.users.get(&client_id).map(|r| r.clone());
+
+        if let Some(user_state) = user_state_opt {
+            let user_caracs = user_state.user.read().await;
             let prefix = if channel.operators.contains(&client_id) {
                 "@"
             } else if channel.voiced.contains(&client_id) {
@@ -251,9 +254,10 @@ async fn handle_names_reply(
             } else {
                 ""
             };
-            let user_caracs = user.user.read().await;
-            let nick = user_caracs.nick.as_ref().unwrap().clone();
-            member_list.push_str(&format!("{prefix}{nick} "));
+
+            if let Some(ref nick) = user_caracs.nick {
+                member_list.push_str(&format!("{prefix}{nick} "));
+            }
         }
     }
     (visibility_symbol.to_owned(), member_list.trim().to_string())

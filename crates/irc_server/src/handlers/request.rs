@@ -3,6 +3,7 @@ use crate::{
     handlers::miscellanneous::IrcUnknownCommand,
     ops::{
         channel::{IrcChannelOperation, IrcInvalidChannelOperation},
+        message::IrcMessageSending,
         miscellanneous::IrcMiscellaneousMessages,
         pre_registration::IrcCapPreRegistration,
         registration::IrcConnectionRegistration,
@@ -19,6 +20,13 @@ pub async fn handle_request(
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
     log::info!("{request:?}");
+
+    // -1. Try Message-sending
+    match IrcMessageSending::handle_command(request, client_id, server_state, user_state).await {
+        Ok(status) => return Ok(status),
+        Err(InternalIrcError::InvalidCommand) => {}
+        Err(err) => return Err(err),
+    }
 
     // 0. Try pre-registration
     match IrcMiscellaneousMessages::handle_command(request, client_id, user_state).await {

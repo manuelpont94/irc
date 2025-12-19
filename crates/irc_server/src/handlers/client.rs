@@ -20,6 +20,7 @@ const CONTROL_CHANNEL_SIZE: usize = 4;
 /// Refactored entry point for a new client connection
 pub async fn handle_client(socket: TcpStream, addr: SocketAddr, server_state: &ServerState) {
     info!("Client connected: {:?}", addr);
+    info!("Client number connected: {}", server_state.users.len());
 
     let (tx_outbound, rx_outbound) = mpsc::channel::<DirectIrcMessage>(OUTBOUND_CHANNEL_SIZE);
     let (tx_control, rx_control) = mpsc::channel::<SubscriptionControl>(CONTROL_CHANNEL_SIZE);
@@ -82,10 +83,10 @@ async fn client_reader_task(
                 info!("[{client_id}] Client Quit with message :{reason:?}");
                 let _ = user_state.tx_status.send(UserStatus::Leaving(reason)).await;
                 info!("[{}] Client disconnected.", client_id);
-                debug!("{server_state:?}");
+                // debug!("{server_state:?}");
                 break;
             }
-            Ok(_) => debug!("{server_state:?}"),
+            Ok(_) => (), //debug!("{server_state:?}"),
             Err(e) => error!("Err occured while dealing with request {request} with error {e}"),
         }
         // The handler's response logic (writing to the socket) must change!
@@ -144,10 +145,12 @@ async fn client_writer_task(
                                 match rx.recv().await {
                                     Ok(channel_msg) => {
                                         // Convert ChannelMessage to IrcMessage if needed
-                                        let irc_msg = DirectIrcMessage {sender: None, raw_line: channel_msg.raw_line };
-                                        if tx.send(irc_msg).await.is_err() {
-                                            debug!("[{client_id_copy}] Aggregated channel closed for {name}");
-                                            break;
+                                        if channel_msg.sender != Some(client_id) {
+                                            let irc_msg = DirectIrcMessage {sender: None, raw_line: channel_msg.raw_line };
+                                            if tx.send(irc_msg).await.is_err() {
+                                                debug!("[{client_id_copy}] Aggregated channel closed for {name}");
+                                                break;
+                                            }
                                         }
                                     }
                                     Err(broadcast::error::RecvError::Lagged(n)) => {

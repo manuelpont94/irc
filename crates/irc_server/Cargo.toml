@@ -6,6 +6,11 @@ edition.workspace = true
 
 [[bin]]
 name = "irc_server"
+path = "src/bin/irc_server.rs"
+
+[[bin]]
+name = "irc_client_tests"
+path = "src/bin/irc_client_tests.rs"
 
 [dependencies]
 anyhow = "1.0.100"

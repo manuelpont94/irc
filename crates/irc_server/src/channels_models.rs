@@ -2,7 +2,10 @@ use dashmap::DashSet;
 use log::{error, info};
 use tokio::sync::{RwLock, broadcast};
 
-use crate::{message_models::BroadcastIrcMessage, types::{ChannelName, ClientId, Topic}};
+use crate::{
+    message_models::BroadcastIrcMessage,
+    types::{ChannelName, ClientId, Topic},
+};
 
 /// Control message sent from Server Broker to a Client Writer Task
 pub enum SubscriptionControl {
@@ -12,8 +15,6 @@ pub enum SubscriptionControl {
     },
     Unsubscribe(ChannelName),
 }
-
-
 
 #[derive(Debug, Clone)]
 pub enum ChannelType {
@@ -41,7 +42,7 @@ pub struct IrcChannel {
 
 impl IrcChannel {
     pub fn new(name: ChannelName) -> Self {
-        let tx = broadcast::channel(100).0;
+        let tx = broadcast::channel(5000).0;
 
         IrcChannel {
             name,
