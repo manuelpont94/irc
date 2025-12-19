@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use log::info;
+
 use crate::replies::MessageReply;
 use crate::types::*;
 use crate::{
@@ -44,7 +46,14 @@ pub async fn handle_join_channel(
     //    of.  The server will process this message as if the user had sent
     //    a PART command (See Section 3.2.2) for each channel he is a member
     //    of.
+    // Numeric Replies:
 
+    //         ERR_NEEDMOREPARAMS              ERR_BANNEDFROMCHAN ✅
+    //         ERR_INVITEONLYCHAN ✅             ERR_BADCHANNELKEY ✅
+    //         ERR_CHANNELISFULL ✅              ERR_BADCHANMASK
+    //         ERR_NOSUCHCHANNEL               ERR_TOOMANYCHANNELS
+    //         ERR_TOOMANYTARGETS              ERR_UNAVAILRESOURCE
+    //         RPL_TOPIC ✅
     // User sends JOIN #test
     // │
     // ├─ check: user is registered?
@@ -89,7 +98,7 @@ pub async fn handle_join_channel(
             .await
         {
             Ok((IrcChannelOperationStatus::NewJoin, Some(channel))) => {
-                let irc_reply = MessageReply::BroadcastJoin {
+                let irc_reply = MessageReply::BroadcastJoinMsg {
                     nick: &nick,
                     user: &user,
                     host,
@@ -279,5 +288,76 @@ pub async fn handle_invalid_join_channel(
     };
     let invalid_join_message = DirectIrcMessage::new(irc_reply.format());
     let _ = user_state.tx_outbound.send(invalid_join_message).await;
+    Ok(UserStatus::Active)
+}
+
+pub async fn handle_part_channel(
+    channels: Vec<ChannelName>,
+    message: Option<String>,
+    client_id: ClientId,
+    server_state: &ServerState,
+    user_state: &UserState,
+) -> Result<UserStatus, InternalIrcError> {
+    // 3.2.2 Part message
+
+    //       Command: PART
+    //    Parameters: <channel> *( "," <channel> ) [ <Part Message> ]
+
+    //    The PART command causes the user sending the message to be removed
+    //    from the list of active members for all given channels listed in the
+    //    parameter string.  If a "Part Message" is given, this will be sent
+    //    instead of the default message, the nickname.  This request is always
+    //    granted by the server.
+
+    //    Servers MUST be able to parse arguments in the form of a list of
+    //    target, but SHOULD NOT use lists when sending PART messages to
+    //    clients.
+
+    //    Numeric Replies:
+
+    //            ERR_NEEDMOREPARAMS              ERR_NOSUCHCHANNEL ✅
+    //            ERR_NOTONCHANNEL ✅
+    let caracs = user_state.get_caracs().await;
+    let nick_from = caracs.clone().nick.unwrap_or(Nickname("*".to_owned()));
+    let user_from = caracs.clone().user.unwrap_or(Username("*".to_owned()));
+    let host_from = &format!("{}", caracs.addr);
+    let leave_message = &match message {
+        Some(message) => format!(":{message}"),
+        None => format!(""),
+    };
+    for channel in channels {
+        let irc_channel_opt = server_state.get_channel(&channel).map(|r| r.clone());
+        if let Some(irc_channel) = irc_channel_opt {
+            let part_msg = MessageReply::PartMsg {
+                nick_from: &nick_from,
+                user_from: &user_from,
+                host_from: host_from,
+                channel: &channel,
+                message: &leave_message,
+            };
+            if irc_channel.remove_member(&client_id).is_some() {
+                let bm = BroadcastIrcMessage::new_with_sender(part_msg.format(), client_id);
+                irc_channel.broadcast_message(bm);
+                // irc_channel.broadcast_message(message);
+                user_state.leave_channel(&channel).await;
+                server_state.quit_channel(&client_id, &channel).await;
+                info!("[{client_id}] leave channel {channel}")
+            } else {
+                let err_msg = IrcReply::ErrNotOnChannel {
+                    nick: &nick_from,
+                    channel: &channel,
+                };
+                let dm = DirectIrcMessage::new(err_msg.format());
+                let _ = user_state.tx_outbound.send(dm).await;
+            }
+        } else {
+            let err_msg = IrcReply::ErrNoSuchChannel {
+                nick: &nick_from,
+                channel: &channel,
+            };
+            let dm = DirectIrcMessage::new(err_msg.format());
+            let _ = user_state.tx_outbound.send(dm).await;
+        }
+    }
     Ok(UserStatus::Active)
 }

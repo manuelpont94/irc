@@ -79,8 +79,8 @@ impl IrcChannel {
         self.members.insert(client_id)
     }
 
-    pub fn remove_member(&self, client_id: ClientId) {
-        let _ = self.members.remove(&client_id);
+    pub fn remove_member(&self, client_id: &ClientId) -> Option<ClientId> {
+        self.members.remove(client_id)
     }
 
     pub fn add_operator(&self, client_id: ClientId) -> bool {

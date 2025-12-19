@@ -1,3 +1,5 @@
+use log::error;
+
 use crate::{
     errors::InternalIrcError,
     message_models::DirectIrcMessage,
@@ -99,21 +101,30 @@ pub fn handle_cap_end_response() -> Result<UserStatus, InternalIrcError> {
     Ok(UserStatus::Handshaking)
 }
 
-//     3.1.2 Nick message
-//       Command: NICK
-//    Parameters: <nickname>
-//    NICK command is used to give user a nickname or change the existing
-//    one.
 pub async fn handle_nick_registration(
     nick: Nickname,
-    _client_id: ClientId,
+    client_id: ClientId,
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
+    //     3.1.2 Nick message
+    //       Command: NICK
+    //    Parameters: <nickname>
+    //    NICK command is used to give user a nickname or change the existing
+    //    one.
+    // Numeric Replies:
+    //         ERR_NONICKNAMEGIVEN             ERR_ERRONEUSNICKNAME
+    //         ERR_NICKNAMEINUSE ✅              ERR_NICKCOLLISION
+    //         ERR_UNAVAILRESOURCE
+    //         ERR_RESTRICTED
     let nick_already_exists = server_state.nick.contains_key(&nick);
     if nick_already_exists {
         // 433 ERR_NICKNAMEINUSE
-        todo!()
+        error!("[{client_id}] nick '{nick}' already exists");
+        let err_nick_in_use = IrcReply::ErrNicknameInUse { nick: &nick };
+        let dm = DirectIrcMessage::new(err_nick_in_use.format());
+        let _ = user_state.tx_outbound.send(dm).await;
+        Ok(UserStatus::Active)
     } else {
         user_state.with_nick(nick).await;
         when_registered(user_state, server_state).await

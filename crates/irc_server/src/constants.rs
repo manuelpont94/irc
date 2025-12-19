@@ -30,6 +30,12 @@ pub const RPL_NAMREPLY_NB: u16 = 353;
 pub const RPL_ENDOFNAMES_NB: u16 = 353;
 pub const RPL_ENDOFNAMES_STR: &str = "End of NAMES list";
 
+// 403    ERR_NOSUCHCHANNEL
+//        "<channel name> :No such channel"
+//   - Used to indicate the given channel name is invalid.
+pub const ERR_NOSUCHCHANNEL_NB: u16 = 403;
+pub const ERR_NOSUCHCHANNEL_STR: &str = "No such channel";
+
 // 421    ERR_UNKNOWNCOMMAND
 //           "<command> :Unknown command"
 pub const ERR_UNKNOWNCOMMAND_NB: u16 = 421;
@@ -41,8 +47,16 @@ pub const ERR_UNKNOWNCOMMAND_STR: &str = "Unknown command";
 //          - Returned when a NICK message is processed that results
 //            in an attempt to change to a currently existing
 //            nickname.
-pub const ERR_NICKNAMEINUSE_NB: u16 = 421;
+pub const ERR_NICKNAMEINUSE_NB: u16 = 433;
 pub const ERR_NICKNAMEINUSE_STR: &str = "Nickname is already in use";
+
+// 442    ERR_NOTONCHANNEL
+//        "<channel> :You're not on that channel"
+//        - Returned by the server whenever a client tries to
+//          perform a channel affecting command for which the
+//          client isn't a member.
+pub const ERR_NOTONCHANNEL_NB: u16 = 433;
+pub const ERR_NOTONCHANNEL_STR: &str = "You're not on that channel";
 
 // 451    ERR_NOTREGISTERED
 //               ":You have not registered"

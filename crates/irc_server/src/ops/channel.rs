@@ -1,3 +1,4 @@
+use crate::handlers::channels::handle_part_channel;
 use crate::types::{ChannelName, ClientId, Topic, Username};
 use crate::{
     errors::InternalIrcError,
@@ -54,6 +55,10 @@ impl IrcChannelOperation {
             Ok((_rem, valid_commmand)) => match valid_commmand {
                 IrcChannelOperation::JOIN(channels_keys) => {
                     handle_join_channel(channels_keys, client_id, server_state, user_state).await
+                }
+                IrcChannelOperation::PART(channels, message) => {
+                    handle_part_channel(channels, message, client_id, server_state, user_state)
+                        .await
                 }
                 // Ir
                 _ => todo!(),

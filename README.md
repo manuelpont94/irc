@@ -1,4 +1,4 @@
-This project implements a basic IRC (Internet Relay Chat) server and client in Rust, designed as a learning exercise to explore network programming, asynchronous I/O with Tokio, and the IRC protocol. The server supports essential commands for user registration, channel management, and messaging, allowing multiple clients to connect and communicate in real-time. A simple Python-based IRC server is also included for comparison and reference.
+This project implements a basic IRC (Internet Relay Chat) server and client in Rust, designed as a learning exercise to explore network programming, asynchronous I/O with Tokio, and the IRC protocol. The server supports essential commands for user registration, channel management, and messaging, allowing multiple clients to connect and communicate in real-time. 
 
 ## Limitations
 - **Single-host deployment**: The server binds only to `127.0.0.1:6667`, restricting connections to the local machine. It does not support remote access, multi-server federation, or distributed networks.

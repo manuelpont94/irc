@@ -218,7 +218,7 @@ impl UserState {
         user_data.member_of.insert(channel_name.clone());
     }
 
-    pub async fn left_channel(&self, channel_name: &ChannelName) {
+    pub async fn leave_channel(&self, channel_name: &ChannelName) {
         let user_data = self.user.write().await;
         let _ = user_data.member_of.remove(channel_name);
     }

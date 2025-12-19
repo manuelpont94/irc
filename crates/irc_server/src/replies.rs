@@ -36,7 +36,9 @@ pub enum IrcReply<'a> {
         version: &'a str,
         modes: &'a str,
     },
-
+    ErrNicknameInUse {
+        nick: &'a Nickname,
+    },
     // User modes
     UModeIs {
         nick: &'a Nickname,
@@ -89,6 +91,11 @@ pub enum IrcReply<'a> {
         nick: &'a Nickname,
     },
     ErrNoSuchChannel {
+        nick: &'a Nickname,
+        channel: &'a ChannelName,
+    },
+    ErrNotOnChannel {
+        nick: &'a Nickname,
         channel: &'a ChannelName,
     },
     ErrNotRegistered {
@@ -125,9 +132,7 @@ impl<'a> IrcReply<'a> {
                 format!(":{SERVER_NAME} CAP {nick} LS :{capabilities}")
             }
             // registration replies & errors
-            IrcReply::Welcome {
-                nick, user, host, ..
-            } => format!(
+            IrcReply::Welcome { nick, user, host } => format!(
                 ":{SERVER_NAME} {RPL_WELCOME_NB:03} {nick} :{RPL_WELCOME_STR} {nick}!{user}@{host}"
             ),
 
@@ -182,11 +187,28 @@ impl<'a> IrcReply<'a> {
                     ":{SERVER_NAME} {ERR_CHANNELISFULL_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
                 )
             }
+            IrcReply::ErrNoSuchChannel { nick, channel } => {
+                format!(
+                    ":{SERVER_NAME} {ERR_NOSUCHCHANNEL_NB:03} {nick} {channel} :{ERR_NOSUCHCHANNEL_STR}"
+                )
+            }
+            IrcReply::ErrNotOnChannel { nick, channel } => {
+                format!(
+                    ":{SERVER_NAME} {ERR_NOTONCHANNEL_NB:03} {nick} {channel} :{ERR_NOTONCHANNEL_STR}"
+                )
+            }
+
+            // Generic
             IrcReply::ErrNeedMoreParams { nick, command } => {
                 format!(
                     ":{SERVER_NAME} {ERR_NEEDMOREPARAMS_NB:03} {nick } {command} :{ERR_NEEDMOREPARAMS_STR}"
                 )
             }
+            // Registration
+            IrcReply::ErrNicknameInUse { nick } => {
+                format!(":{SERVER_NAME} {ERR_NICKNAMEINUSE_NB:03} {nick } :{ERR_NICKNAMEINUSE_STR}")
+            }
+
             _ => todo!("Implement remaining reply variants"),
         }
     }
@@ -195,7 +217,7 @@ impl<'a> IrcReply<'a> {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum MessageReply<'a> {
-    BroadcastJoin {
+    BroadcastJoinMsg {
         nick: &'a Nickname,
         user: &'a Username,
         host: &'a str,
@@ -215,11 +237,18 @@ pub enum MessageReply<'a> {
         channel: &'a ChannelName,
         message: &'a str,
     },
+    PartMsg {
+        nick_from: &'a Nickname,
+        user_from: &'a Username,
+        host_from: &'a str,
+        channel: &'a ChannelName,
+        message: &'a str,
+    },
 }
 impl<'a> MessageReply<'a> {
     pub fn format(&self) -> String {
         match self {
-            MessageReply::BroadcastJoin {
+            MessageReply::BroadcastJoinMsg {
                 nick,
                 user,
                 host,
@@ -239,6 +268,13 @@ impl<'a> MessageReply<'a> {
                 channel,
                 message,
             } => format!(":{nick_from}!{user_from}@{host_from} PRIVMSG {channel} :{message}"),
+            MessageReply::PartMsg {
+                nick_from,
+                user_from,
+                host_from,
+                channel,
+                message,
+            } => format!(":{nick_from}!{user_from}@{host_from} PART {channel} {message}"),
         }
     }
 }

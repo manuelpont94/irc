@@ -135,6 +135,17 @@ impl ServerState {
         Ok((IrcChannelOperationStatus::NewJoin, Some(channel)))
     }
 
+    pub async fn quit_channel(&self, client_id: &ClientId, channel_name: &ChannelName) {
+        let channel_opt = self.get_channel(channel_name);
+        if let Some(channel) = channel_opt {
+            channel.remove_member(&client_id);
+            if channel.members.is_empty() {
+                info!("Channel {channel_name} is empty, destroying.");
+                self.channels.remove(channel_name);
+            }
+        }
+    }
+
     pub async fn handle_quit(&self, client_id: ClientId, reason: Option<String>) {
         let quit_reason = reason.unwrap_or_else(|| "Client Quit".to_string());
 
@@ -160,7 +171,7 @@ impl ServerState {
                             }
                         }
                     }
-                    channel.remove_member(client_id);
+                    channel.remove_member(&client_id);
                     if channel.members.is_empty() {
                         info!("Channel {channel_name} is empty, destroying.");
                         self.channels.remove(channel_name);
