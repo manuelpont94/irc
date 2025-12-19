@@ -1,4 +1,4 @@
-use crate::types::{Channel, Username};
+use crate::types::{ChannelName, ClientId, Topic, Username};
 use crate::{
     errors::InternalIrcError,
     handlers::channels::{handle_invalid_join_channel, handle_join_channel},
@@ -19,14 +19,14 @@ use nom::{
 
 pub enum IrcChannelOperation {
     LEAVE, // JOIN 0 - should be tested befoire JOIN Channel
-    JOIN(Vec<(Channel, Option<String>)>),
-    PART(Vec<Channel>, Option<String>),
-    MODE(Channel, Vec<(char, Vec<char>)>),
-    TOPIC(Channel, Option<String>),
+    JOIN(Vec<(ChannelName, Option<String>)>),
+    PART(Vec<ChannelName>, Option<String>),
+    MODE(ChannelName, Vec<(char, Vec<char>)>),
+    TOPIC(ChannelName, Option<Topic>),
     NAMES(Option<Vec<String>>, Option<String>),
     LIST(Option<Vec<String>>, Option<String>),
-    INVITE(Nickname, Channel),
-    KICK(Vec<Channel>, Vec<Username>, Option<String>),
+    INVITE(Nickname, ChannelName),
+    KICK(Vec<ChannelName>, Vec<Username>, Option<String>),
 }
 impl IrcChannelOperation {
     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
@@ -46,7 +46,7 @@ impl IrcChannelOperation {
 
     pub async fn handle_command(
         command: &str,
-        client_id: usize,
+        client_id: ClientId,
         server_state: &ServerState,
         user_state: &UserState,
     ) -> Result<UserStatus, InternalIrcError> {
@@ -106,7 +106,7 @@ pub fn valid_join_channel_parser(input: &str) -> IResult<&str, IrcChannelOperati
             .enumerate()
             .for_each(|(i, v)| opt_keys[i] = Some((*v).to_string()))
     }
-    let channel_keys: Vec<(Channel, Option<String>)> =
+    let channel_keys: Vec<(ChannelName, Option<String>)> =
         std::iter::zip(channels, opt_keys).collect::<Vec<_>>();
 
     Ok((rem, IrcChannelOperation::JOIN(channel_keys)))
@@ -237,7 +237,12 @@ fn valid_topic_channel_parser(input: &str) -> IResult<&str, IrcChannelOperation>
         opt(preceded(tag(" "), trailing_parser)),
     )
         .parse(input)?;
-    let topic = topic.map(str::to_owned);
+    let topic = if let Some(the_topic) = topic {
+        Some(Topic(the_topic.to_owned()))
+    } else {
+        None
+    };
+
     Ok((rem, IrcChannelOperation::TOPIC(channel, topic)))
 }
 

@@ -1,14 +1,37 @@
 use std::fmt::Display;
 
+#[derive(Debug, Clone, PartialEq, Hash, Eq, Copy)]
+pub struct ClientId(pub usize);
+impl Display for ClientId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum Target {
-    Channel(String),
-    Nickname(String),
-    HostNameMask(String),
-    ServerNameMask(String),
-    UseMask(String),
+    Nickname(Nickname),
+    ServerName(Hostname),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub enum MessageTo {
+    ChannelName(ChannelName),
+    Nickname(Nickname),
+    TargetMask(TargetMask),
+    UserHostServer((Username, Option<Host>, Hostname)),
+    UserHost((Username, Host)),
+    NickUserHost((Nickname, Username, Host)),
+}
+
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct TargetMask(pub String);
+impl Display for TargetMask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Nickname(pub String);
 impl Display for Nickname {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -16,7 +39,7 @@ impl Display for Nickname {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Username(pub String);
 impl Display for Username {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -24,7 +47,7 @@ impl Display for Username {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Realname(pub String);
 impl Display for Realname {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -32,15 +55,23 @@ impl Display for Realname {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Channel(pub String);
-impl Display for Channel {
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct ChannelName(pub String);
+impl Display for ChannelName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct Topic(pub String);
+impl Display for Topic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum Host {
     Hostname(Hostname),
     IpAddr(IpAddr),
@@ -54,7 +85,7 @@ impl Display for Host {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Hostname(pub String);
 impl Display for Hostname {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -62,7 +93,7 @@ impl Display for Hostname {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum IpAddr {
     Ip4Addr(Ip4Addr),
     Ip6Addr(Ip6Addr),
@@ -76,14 +107,14 @@ impl Display for IpAddr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Ip6Addr(pub String);
 impl Display for Ip6Addr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Ip4Addr(pub String);
 impl Display for Ip4Addr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

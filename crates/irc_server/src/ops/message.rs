@@ -9,8 +9,9 @@ use nom::{
 use crate::{
     errors::InternalIrcError,
     handlers::messages::handle_privmsg,
-    ops::parsers::{targetmask_parser, trailing_parser},
+    ops::parsers::{msgtarget_parser, targetmask_parser, trailing_parser},
     server_state::ServerState,
+    types::MessageTo,
     user_state::{UserState, UserStatus},
 };
 use std::str::FromStr;
@@ -83,7 +84,7 @@ impl FromStr for Message {
 }
 
 pub enum IrcMessageSending {
-    PRIVMSG(Vec<String>, String),
+    PRIVMSG(Vec<MessageTo>, String),
     NOTICE,
     MOTD,
     VERSION,
@@ -96,29 +97,29 @@ pub enum IrcMessageSending {
     INFO,
 }
 
-// impl IrcMessageSending {
-//     pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
-//         let mut parser = alt((valid_privmsg_parser,));
-//         parser.parse(input)
-//     }
+impl IrcMessageSending {
+    pub fn irc_command_parser(input: &str) -> IResult<&str, Self> {
+        let mut parser = alt((valid_privmsg_parser,));
+        parser.parse(input)
+    }
 
-//     pub async fn handle_command(
-//         command: &str,
-//         _client_id: usize,
-//         server_state: &ServerState,
-//         user_state: &UserState,
-//     ) -> Result<UserStatus, InternalIrcError> {
-//         match IrcMessageSending::irc_command_parser(command) {
-//             Ok((_rem, valid_commmand)) => match valid_commmand {
-//                 IrcMessageSending::PRIVMSG(msgtarget, msg) => {
-//                     handle_privmsg(msgtarget, msg, server_state, user_state).await
-//                 }
-//                 _ => todo!(),
-//             },
-//             Err(_e) => Err(InternalIrcError::InvalidCommand),
-//         }
-//     }
-// }
+    pub async fn handle_command(
+        command: &str,
+        _client_id: usize,
+        server_state: &ServerState,
+        user_state: &UserState,
+    ) -> Result<UserStatus, InternalIrcError> {
+        match IrcMessageSending::irc_command_parser(command) {
+            Ok((_rem, valid_commmand)) => match valid_commmand {
+                IrcMessageSending::PRIVMSG(msgtarget, msg) => {
+                    handle_privmsg(msgtarget, msg, server_state, user_state).await
+                }
+                _ => todo!(),
+            },
+            Err(_e) => Err(InternalIrcError::InvalidCommand),
+        }
+    }
+}
 
 // 3.3.1 Private messages
 
@@ -138,19 +139,14 @@ pub enum IrcMessageSending {
 //    '*' and '?'  characters.  This extension to the PRIVMSG command is
 //    only available to operators.
 
-// fn valid_privmsg_parser(input: &str) -> IResult<&str, IrcMessageSending> {
-//     let (rem, (target_mask, text_to_be_sent)) = (preceded(
-//         tag_no_case("PRIVMSG "),
-//         (
-//             separated_list1(tag(", "), alt((targetmask_parser, msgtarget_parser))),
-//             preceded(tag(" :"), trailing_parser),
-//         ),
-//     ))
-//     .parse(input)?;
-//     let target_mask = target_mask.into_iter().map(|s| s.to_owned()).collect();
-//     let text_to_be_sent = text_to_be_sent.to_owned();
-//     Ok((
-//         rem,
-//         IrcMessageSending::PRIVMSG(target_mask, text_to_be_sent),
-//     ))
-// }
+fn valid_privmsg_parser(input: &str) -> IResult<&str, IrcMessageSending> {
+    let (rem, (target_mask, text_to_be_sent)) = preceded(
+        tag_no_case("PRIVMSG "),
+        (msgtarget_parser, preceded(tag(" :"), trailing_parser)),
+    )
+    .parse(input)?;
+    Ok((
+        rem,
+        IrcMessageSending::PRIVMSG(target_mask, text_to_be_sent.to_owned()),
+    ))
+}

@@ -1,6 +1,6 @@
-use crate::channels_models::{ChannelName, SubscriptionControl};
+use crate::channels_models::SubscriptionControl;
 use crate::replies::IrcReply;
-use crate::types::{Nickname, Realname, Username};
+use crate::types::{ChannelName, ClientId, Nickname, Realname, Username};
 use crate::{errors::InternalIrcError, message_models::IrcMessage};
 use core::net::SocketAddr;
 use dashmap::DashSet;
@@ -18,8 +18,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_USER_ID: AtomicUsize = AtomicUsize::new(1);
 
-fn get_next_user_id() -> usize {
-    NEXT_USER_ID.fetch_add(1, Ordering::Relaxed)
+fn get_next_user_id() -> ClientId {
+    ClientId(NEXT_USER_ID.fetch_add(1, Ordering::Relaxed))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +35,7 @@ pub enum UserStatus {
 
 #[derive(Debug)]
 pub struct User {
-    pub user_id: usize,
+    pub user_id: ClientId,
     pub nick: Option<Nickname>,
     pub user: Option<Username>,
     pub modes: HashSet<char>,
@@ -47,7 +47,7 @@ pub struct User {
 
 #[derive(Debug, Clone)]
 pub struct UserSnapshot {
-    pub user_id: usize,
+    pub user_id: ClientId,
     pub nick: Option<Nickname>,
     pub user: Option<Username>,
     pub modes: HashSet<char>,
@@ -131,7 +131,7 @@ impl UserState {
         true
     }
 
-    pub async fn get_user_id(&self) -> usize {
+    pub async fn get_user_id(&self) -> ClientId {
         let user_data = self.user.read().await;
         user_data.user_id
     }

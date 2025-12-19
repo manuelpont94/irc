@@ -1,4 +1,7 @@
-use crate::{constants::*, types::Nickname};
+use crate::{
+    constants::*,
+    types::{ChannelName, Nickname, Topic, Username},
+};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
@@ -18,7 +21,7 @@ pub enum IrcReply<'a> {
     // Connection registration
     Welcome {
         nick: &'a Nickname,
-        user: &'a str,
+        user: &'a Username,
         host: &'a str,
     },
     YourHost {
@@ -49,33 +52,33 @@ pub enum IrcReply<'a> {
     // Channel operations
     Join {
         nick: &'a Nickname,
-        user: &'a str,
+        user: &'a Username,
         host: &'a str,
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
     Topic {
         nick: &'a Nickname,
-        channel: &'a str,
-        topic: &'a str,
+        channel: &'a ChannelName,
+        topic: &'a Topic,
     },
     NoTopic {
         nick: &'a Nickname,
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
     Names {
         nick: &'a Nickname,
-        channel: &'a str,
+        channel: &'a ChannelName,
         visibility: &'a str,
         names: &'a str,
     },
     EndOfName {
         nick: &'a Nickname,
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
     List {
-        channel: &'a str,
+        channel: &'a ChannelName,
         visible: u32,
-        topic: &'a str,
+        topic: &'a Topic,
     },
     ListEnd,
 
@@ -92,22 +95,22 @@ pub enum IrcReply<'a> {
         nick: &'a Nickname,
     },
     ErrNoSuchChannel {
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
     ErrNotRegistered {
         nick: &'a Nickname,
     },
     ErrBannedFromChan {
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
     ErrInviteOnlyChan {
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
     ErrBadChannelKey {
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
     ErrChannelIsFull {
-        channel: &'a str,
+        channel: &'a ChannelName,
     },
 }
 

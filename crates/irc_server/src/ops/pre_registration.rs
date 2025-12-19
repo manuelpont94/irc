@@ -9,6 +9,7 @@ use crate::{
     errors::InternalIrcError,
     handlers::registration::*,
     server_state::ServerState,
+    types::ClientId,
     user_state::{UserState, UserStatus},
 };
 // CAP            = "CAP" SP cap-subcmd [SP cap-params]
@@ -55,7 +56,7 @@ impl IrcCapPreRegistration {
 
     pub async fn handle_command(
         command: &str,
-        client_id: usize,
+        client_id: ClientId,
         server_state: &ServerState,
         user_state: &UserState,
     ) -> Result<UserStatus, InternalIrcError> {

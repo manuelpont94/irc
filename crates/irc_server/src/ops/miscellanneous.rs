@@ -10,7 +10,7 @@ use crate::{
     errors::InternalIrcError,
     handlers::miscellanneous::handle_ping,
     ops::parsers::host_parser,
-    types::Host,
+    types::{ClientId, Host},
     user_state::{UserState, UserStatus},
 };
 pub enum IrcMiscellaneousMessages {
@@ -27,7 +27,7 @@ impl IrcMiscellaneousMessages {
 
     pub async fn handle_command(
         command: &str,
-        _client_id: usize,
+        _client_id: ClientId,
         user_state: &UserState,
     ) -> Result<UserStatus, InternalIrcError> {
         match IrcMiscellaneousMessages::irc_command_parser(command) {

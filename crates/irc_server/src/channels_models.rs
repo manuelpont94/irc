@@ -2,13 +2,15 @@ use dashmap::DashSet;
 use log::{error, info};
 use tokio::sync::{RwLock, broadcast};
 
+use crate::types::{ChannelName, ClientId, Topic};
+
 /// Control message sent from Server Broker to a Client Writer Task
 pub enum SubscriptionControl {
     Subscribe {
-        channel_name: String,
+        channel_name: ChannelName,
         receiver: broadcast::Receiver<ChannelMessage>,
     },
-    Unsubscribe(String),
+    Unsubscribe(ChannelName),
 }
 
 #[derive(Debug, Clone)]
@@ -36,26 +38,24 @@ pub enum ChannelType {
     Safe,     // '!'
 }
 
-pub type ChannelName = String;
-
 // Use Tokio's RwLock for async/await support
 #[derive(Debug)]
 pub struct IrcChannel {
-    pub name: String,
+    pub name: ChannelName,
     // Immutable
     pub kind: ChannelType,
-    pub topic: RwLock<Option<String>>,
+    pub topic: RwLock<Option<Topic>>,
     pub topic_set_by: RwLock<Option<usize>>,
     pub topic_set_at: RwLock<Option<u64>>,
-    pub members: DashSet<usize>,
-    pub operators: DashSet<usize>,
-    pub voiced: DashSet<usize>,
+    pub members: DashSet<ClientId>,
+    pub operators: DashSet<ClientId>,
+    pub voiced: DashSet<ClientId>,
     pub modes: RwLock<ChannelModes>,
     pub tx: broadcast::Sender<ChannelMessage>,
 }
 
 impl IrcChannel {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: ChannelName) -> Self {
         let tx = broadcast::channel(100).0;
 
         IrcChannel {
@@ -89,24 +89,24 @@ impl IrcChannel {
         }
     }
 
-    pub fn add_member(&self, client_id: usize) -> bool {
+    pub fn add_member(&self, client_id: ClientId) -> bool {
         self.members.insert(client_id)
     }
 
-    pub fn remove_member(&self, client_id: usize) {
+    pub fn remove_member(&self, client_id: ClientId) {
         let _ = self.members.remove(&client_id);
     }
 
-    pub fn add_operator(&self, client_id: usize) -> bool {
+    pub fn add_operator(&self, client_id: ClientId) -> bool {
         self.operators.insert(client_id)
     }
 
-    pub async fn is_banned(&self, client_id: usize) -> bool {
+    pub async fn is_banned(&self, client_id: ClientId) -> bool {
         let modes = self.modes.read().await;
         modes.ban_list.contains(&client_id)
     }
 
-    pub async fn add_ban_user(&self, client_id: usize) -> bool {
+    pub async fn add_ban_user(&self, client_id: ClientId) -> bool {
         let modes = self.modes.write().await;
         modes.ban_list.insert(client_id)
     }
@@ -176,19 +176,19 @@ pub enum IrcChannelOperationStatus {
 
 #[derive(Debug, Clone)]
 pub struct ChannelModes {
-    pub invite_only: bool,                 // +i
-    pub moderated: bool,                   // +m
-    pub no_external_msgs: bool,            // +n
-    pub private: bool,                     // +p
-    pub secret: bool,                      // +s
-    pub topic_lock: bool,                  // +t
-    pub key: Option<String>,               // +k <key>
-    pub user_limit: Option<usize>,         // +l <count>
-    pub ban_list: DashSet<usize>,          // +b
-    pub except_list: DashSet<usize>,       // +e
-    pub invite_exceptions: DashSet<usize>, // +I
+    pub invite_only: bool,                    // +i
+    pub moderated: bool,                      // +m
+    pub no_external_msgs: bool,               // +n
+    pub private: bool,                        // +p
+    pub secret: bool,                         // +s
+    pub topic_lock: bool,                     // +t
+    pub key: Option<String>,                  // +k <key>
+    pub user_limit: Option<usize>,            // +l <count>
+    pub ban_list: DashSet<ClientId>,          // +b
+    pub except_list: DashSet<ClientId>,       // +e
+    pub invite_exceptions: DashSet<ClientId>, // +I
 }
-
+//TODO invite exceptions
 impl Default for ChannelModes {
     fn default() -> Self {
         Self {

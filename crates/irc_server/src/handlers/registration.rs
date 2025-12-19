@@ -3,7 +3,7 @@ use crate::{
     message_models::IrcMessage,
     replies::IrcReply,
     server_state::ServerState,
-    types::{Nickname, Realname, Username},
+    types::{ClientId, Nickname, Realname, Username},
     user_state::{UserState, UserStatus},
 };
 
@@ -20,7 +20,7 @@ pub const IRC_SERVER_CAP_ECHO_MESSAGE: bool = false;
 // S: CAP * LS :sasl multi-prefix echo-message
 
 pub async fn handle_cap_ls_response(
-    _client_id: usize,
+    _client_id: ClientId,
     _server: &ServerState,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
@@ -51,7 +51,7 @@ pub async fn handle_cap_ls_response(
 // Server returns the list of capabilities currently active for this client.
 
 pub async fn handle_cap_list_response(
-    _client_id: usize,
+    _client_id: ClientId,
     _server: &ServerState,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {
@@ -106,7 +106,7 @@ pub fn handle_cap_end_response() -> Result<UserStatus, InternalIrcError> {
 //    one.
 pub async fn handle_nick_registration(
     nick: Nickname,
-    _client_id: usize,
+    _client_id: ClientId,
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
@@ -118,7 +118,7 @@ pub async fn handle_user_registration(
     user_name: Username,
     mode: u8,
     real_name: Realname,
-    _client_id: usize,
+    _client_id: ClientId,
     user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {
@@ -139,7 +139,7 @@ pub async fn when_registered(
         let welcome_message = IrcMessage::new(
             IrcReply::Welcome {
                 nick: &nick,
-                user: &format!("{user}"),
+                user: &user,
                 host: &format!("{host:?}"),
             }
             .format(),
@@ -169,7 +169,7 @@ pub async fn handle_mode_registration(
 
 pub async fn handle_quit_registration(
     reason: Option<String>,
-    client_id: usize,
+    client_id: ClientId,
     _user_state: &UserState,
     server_state: &ServerState,
 ) -> Result<UserStatus, InternalIrcError> {

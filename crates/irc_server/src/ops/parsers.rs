@@ -8,7 +8,10 @@ use nom::{
     sequence::{pair, preceded},
 };
 
-use crate::types::{Channel, Host, Hostname, Ip4Addr, Ip6Addr, IpAddr, Nickname, Username};
+use crate::types::{
+    ChannelName, Host, Hostname, Ip4Addr, Ip6Addr, IpAddr, MessageTo, Nickname, Target, TargetMask,
+    Username,
+};
 
 // 2.3.1 Message format in Augmented BNF
 
@@ -121,22 +124,25 @@ fn hexdigit(input: &str) -> IResult<&str, &str> {
 }
 
 // 00.  target     =  nickname / server
-// pub fn target_parser(input: &str) -> IResult<&str, &str> {
-//     let mut parser = alt((nickname_parser, servername_parser));
-//     parser.parse(input)
-// }
+pub fn target_parser(input: &str) -> IResult<&str, Target> {
+    let mut parser = alt((
+        nickname_parser.map(|n| Target::Nickname(n)),
+        servername_parser.map(|s| Target::ServerName(s)),
+    ));
+    parser.parse(input)
+}
 
 // 01.  msgtarget  =  msgto *( "," msgto )
 // TODO à revoir
-// pub fn msgtarget_parser(input: &str) -> IResult<&str, &str> {
-//     let mut parser = recognize(pair(msgto_parser, many0(preceded(tag(","), msgto_parser))));
-//     parser.parse(input)
-// }
+pub fn msgtarget_parser(input: &str) -> IResult<&str, Vec<MessageTo>> {
+    let mut parser = separated_list1(tag(", "), msgto_parser);
+    parser.parse(input)
+}
 
 // 02.  msgto      =  channel / ( user [ "%" host ] "@" servername )
 //      msgto      =/ ( user "%" host ) / targetmask
 //      msgto      =/ nickname / ( nickname "!" user "@" host )
-fn msgto_user_host_server_parser(input: &str) -> IResult<&str, &str> {
+pub fn msgto_user_host_server_parser_as_str(input: &str) -> IResult<&str, &str> {
     let mut parser = recognize((
         user_parser,
         opt(preceded(tag("%"), host_parser)),
@@ -146,7 +152,7 @@ fn msgto_user_host_server_parser(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
-pub fn msgto_user_host_server_splitted_parser(
+pub fn msgto_user_host_server_parser(
     input: &str,
 ) -> IResult<&str, (Username, Option<Host>, Hostname)> {
     let mut parser = (
@@ -157,17 +163,17 @@ pub fn msgto_user_host_server_splitted_parser(
     parser.parse(input)
 }
 
-fn msgto_user_host_parser(input: &str) -> IResult<&str, &str> {
+pub fn msgto_user_host_parser_as_str(input: &str) -> IResult<&str, &str> {
     let mut parser = recognize((user_parser, tag("%"), host_parser));
     parser.parse(input)
 }
 
-pub fn msgto_user_host_splitted_parser(input: &str) -> IResult<&str, (Username, Host)> {
+pub fn msgto_user_host_parser(input: &str) -> IResult<&str, (Username, Host)> {
     let mut parser = (user_parser, preceded(tag("%"), host_parser));
     parser.parse(input)
 }
 
-fn msgto_nick_user_host_parser(input: &str) -> IResult<&str, &str> {
+pub fn msgto_nick_user_host_parser_as_str(input: &str) -> IResult<&str, &str> {
     let mut parser = recognize((
         nickname_parser,
         tag("!"),
@@ -178,9 +184,7 @@ fn msgto_nick_user_host_parser(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
-pub fn msgto_nick_user_host_splitted_parser(
-    input: &str,
-) -> IResult<&str, (Nickname, Username, Host)> {
+pub fn msgto_nick_user_host_parser(input: &str) -> IResult<&str, (Nickname, Username, Host)> {
     let mut parser = (
         nickname_parser,
         preceded(tag("!"), user_parser),
@@ -189,17 +193,17 @@ pub fn msgto_nick_user_host_splitted_parser(
     parser.parse(input)
 }
 
-// pub fn msgto_parser(input: &str) -> IResult<&str, &str> {
-//     let mut parser = alt((
-//         channel_parser,
-//         msgto_user_host_server_parser,
-//         msgto_user_host_parser,
-//         targetmask_parser,
-//         msgto_nick_user_host_parser,
-//         nickname_parser,
-//     ));
-//     parser.parse(input)
-// }
+pub fn msgto_parser(input: &str) -> IResult<&str, MessageTo> {
+    let mut parser = alt((
+        channel_parser.map(|c| MessageTo::ChannelName(c)),
+        msgto_user_host_server_parser.map(|uhs| MessageTo::UserHostServer(uhs)),
+        msgto_user_host_parser.map(|uh| MessageTo::UserHost(uh)),
+        targetmask_parser.map(|tm| MessageTo::TargetMask(tm)),
+        msgto_nick_user_host_parser.map(|nuh| MessageTo::NickUserHost(nuh)),
+        nickname_parser.map(|n| MessageTo::Nickname(n)),
+    ));
+    parser.parse(input)
+}
 
 // 03.  channel    =  ( "#" / "+" / ( "!" channelid ) / "&" ) chanstring
 //                 [ ":" chanstring ]
@@ -214,14 +218,14 @@ fn channel_prefix_parser(input: &str) -> IResult<&str, &str> {
 }
 
 // channel = ( "#" / "+" / ( "!" channelid ) / "&" ) chanstring [ ":" chanstring ]
-pub fn channel_parser(input: &str) -> IResult<&str, Channel> {
+pub fn channel_parser(input: &str) -> IResult<&str, ChannelName> {
     let mut parser = recognize((
         channel_prefix_parser,
         chanstring_parser,
         opt(preceded(tag(":"), chanstring_parser)),
     ));
     let (rem, channel) = parser.parse(input)?;
-    Ok((rem, Channel(channel.to_owned())))
+    Ok((rem, ChannelName(channel.to_owned())))
 }
 
 // 04.  servername =  hostname
@@ -396,7 +400,7 @@ fn mask_segment(input: &str) -> IResult<&str, &str> {
 /// **Constraints:**
 /// 1. Must contain at least one "." (period).
 /// 2. Must not contain any wildcards ('*' or '?') following the last ".".
-pub fn targetmask_parser(input: &str) -> IResult<&str, &str> {
+pub fn targetmask_parser(input: &str) -> IResult<&str, TargetMask> {
     // 1. Structure Check: Parse the mask as segments separated by dots.
     // We use recognize to get the full matched string slice, which is guaranteed
     // to be structurally correct (segments separated by dots) and free of disallowed IRC chars.
@@ -424,7 +428,7 @@ pub fn targetmask_parser(input: &str) -> IResult<&str, &str> {
         },
     )
     .parse(input)?;
-    Ok((rem, full_mask))
+    Ok((rem, TargetMask(full_mask.to_owned())))
 }
 
 // pub fn targetmask_parser(input: &str) -> IResult<&str, &str> {

@@ -1,17 +1,20 @@
 use crate::{
     errors::InternalIrcError,
     handlers::miscellanneous::IrcUnknownCommand,
-    ops::channel::{IrcChannelOperation, IrcInvalidChannelOperation},
-    ops::miscellanneous::IrcMiscellaneousMessages,
-    ops::pre_registration::IrcCapPreRegistration,
-    ops::registration::IrcConnectionRegistration,
+    ops::{
+        channel::{IrcChannelOperation, IrcInvalidChannelOperation},
+        miscellanneous::IrcMiscellaneousMessages,
+        pre_registration::IrcCapPreRegistration,
+        registration::IrcConnectionRegistration,
+    },
     server_state::ServerState,
+    types::ClientId,
     user_state::{UserState, UserStatus},
 };
 
 pub async fn handle_request(
     request: &str,
-    client_id: usize,
+    client_id: ClientId,
     server_state: &ServerState,
     user_state: &UserState,
 ) -> Result<UserStatus, InternalIrcError> {

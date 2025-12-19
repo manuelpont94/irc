@@ -9,6 +9,7 @@ use super::request::handle_request;
 use crate::channels_models::SubscriptionControl;
 use crate::errors::InternalIrcError;
 use crate::message_models::IrcMessage;
+use crate::types::{ChannelName, ClientId};
 use crate::user_state::UserStatus;
 use crate::{server_state::ServerState, user_state::UserState};
 
@@ -53,7 +54,7 @@ pub async fn handle_client(socket: TcpStream, addr: SocketAddr, server_state: &S
 
 async fn client_reader_task(
     reader: tokio::io::ReadHalf<TcpStream>,
-    client_id: usize,
+    client_id: ClientId,
     server_state: ServerState,
     user_state: UserState,
 ) -> Result<(), InternalIrcError> {
@@ -98,7 +99,7 @@ async fn client_reader_task(
 
 async fn client_writer_task(
     mut writer: tokio::io::WriteHalf<TcpStream>,
-    client_id: usize,
+    client_id: ClientId,
     mut rx_outbound: mpsc::Receiver<IrcMessage>,
     mut rx_control: mpsc::Receiver<SubscriptionControl>,
     mut rx_status: mpsc::Receiver<UserStatus>,
@@ -107,7 +108,7 @@ async fn client_writer_task(
     let (tx_aggregated, mut rx_aggregated) = mpsc::channel::<IrcMessage>(100);
 
     // Track spawned tasks for cleanup
-    let mut subscription_tasks: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+    let mut subscription_tasks: HashMap<ChannelName, tokio::task::JoinHandle<()>> = HashMap::new();
 
     loop {
         tokio::select! {

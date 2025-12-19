@@ -19,7 +19,7 @@ use crate::{
         user_parser,
     },
     server_state::ServerState,
-    types::{Host, Nickname, Realname, Username},
+    types::{ClientId, Host, Nickname, Realname, Username},
     user_state::{UserState, UserStatus},
 };
 
@@ -56,7 +56,7 @@ impl IrcConnectionRegistration {
 
     pub async fn handle_command(
         command: &str,
-        client_id: usize,
+        client_id: ClientId,
         server_state: &ServerState,
         user_state: &UserState,
     ) -> Result<UserStatus, InternalIrcError> {
