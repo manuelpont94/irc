@@ -8,23 +8,23 @@ use crate::types::{ChannelName, ClientId, Topic};
 pub enum SubscriptionControl {
     Subscribe {
         channel_name: ChannelName,
-        receiver: broadcast::Receiver<ChannelMessage>,
+        receiver: broadcast::Receiver<BroadcastIrcMessage>,
     },
     Unsubscribe(ChannelName),
 }
 
 #[derive(Debug, Clone)]
-pub struct ChannelMessage {
+pub struct BroadcastIrcMessage {
     pub raw_line: String,
 }
-impl ChannelMessage {
+impl BroadcastIrcMessage {
     pub fn new(line: String) -> Self {
         let final_line = if line.ends_with("\r\n") {
             line
         } else {
             format!("{line}\r\n")
         };
-        ChannelMessage {
+        BroadcastIrcMessage {
             raw_line: final_line,
         }
     }
@@ -51,7 +51,7 @@ pub struct IrcChannel {
     pub operators: DashSet<ClientId>,
     pub voiced: DashSet<ClientId>,
     pub modes: RwLock<ChannelModes>,
-    pub tx: broadcast::Sender<ChannelMessage>,
+    pub tx: broadcast::Sender<BroadcastIrcMessage>,
 }
 
 impl IrcChannel {
@@ -72,11 +72,11 @@ impl IrcChannel {
         }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<ChannelMessage> {
+    pub fn subscribe(&self) -> broadcast::Receiver<BroadcastIrcMessage> {
         self.tx.subscribe()
     }
 
-    pub fn broadcast_message(&self, message: ChannelMessage) {
+    pub fn broadcast_message(&self, message: BroadcastIrcMessage) {
         // works perfectly with &self
         info!(
             "Broadcasting to {}: {} receivers",

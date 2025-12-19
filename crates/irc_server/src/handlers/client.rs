@@ -8,7 +8,7 @@ use tokio::sync::{broadcast, mpsc};
 use super::request::handle_request;
 use crate::channels_models::SubscriptionControl;
 use crate::errors::InternalIrcError;
-use crate::message_models::IrcMessage;
+use crate::message_models::DirectIrcMessage;
 use crate::types::{ChannelName, ClientId};
 use crate::user_state::UserStatus;
 use crate::{server_state::ServerState, user_state::UserState};
@@ -21,7 +21,7 @@ const CONTROL_CHANNEL_SIZE: usize = 4;
 pub async fn handle_client(socket: TcpStream, addr: SocketAddr, server_state: &ServerState) {
     info!("Client connected: {:?}", addr);
 
-    let (tx_outbound, rx_outbound) = mpsc::channel::<IrcMessage>(OUTBOUND_CHANNEL_SIZE);
+    let (tx_outbound, rx_outbound) = mpsc::channel::<DirectIrcMessage>(OUTBOUND_CHANNEL_SIZE);
     let (tx_control, rx_control) = mpsc::channel::<SubscriptionControl>(CONTROL_CHANNEL_SIZE);
     let (tx_status, rx_status) = mpsc::channel::<UserStatus>(CONTROL_CHANNEL_SIZE);
 
@@ -100,12 +100,12 @@ async fn client_reader_task(
 async fn client_writer_task(
     mut writer: tokio::io::WriteHalf<TcpStream>,
     client_id: ClientId,
-    mut rx_outbound: mpsc::Receiver<IrcMessage>,
+    mut rx_outbound: mpsc::Receiver<DirectIrcMessage>,
     mut rx_control: mpsc::Receiver<SubscriptionControl>,
     mut rx_status: mpsc::Receiver<UserStatus>,
 ) -> Result<(), std::io::Error> {
     // Single aggregated channel for ALL outgoing messages (broadcast + direct)
-    let (tx_aggregated, mut rx_aggregated) = mpsc::channel::<IrcMessage>(100);
+    let (tx_aggregated, mut rx_aggregated) = mpsc::channel::<DirectIrcMessage>(100);
 
     // Track spawned tasks for cleanup
     let mut subscription_tasks: HashMap<ChannelName, tokio::task::JoinHandle<()>> = HashMap::new();
@@ -144,7 +144,7 @@ async fn client_writer_task(
                                 match rx.recv().await {
                                     Ok(channel_msg) => {
                                         // Convert ChannelMessage to IrcMessage if needed
-                                        let irc_msg = IrcMessage { raw_line: channel_msg.raw_line };
+                                        let irc_msg = DirectIrcMessage {sender: None, raw_line: channel_msg.raw_line };
                                         if tx.send(irc_msg).await.is_err() {
                                             debug!("[{client_id_copy}] Aggregated channel closed for {name}");
                                             break;

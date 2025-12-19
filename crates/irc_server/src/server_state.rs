@@ -1,5 +1,5 @@
 use crate::{
-    channels_models::{ChannelMessage, IrcChannel, IrcChannelOperationStatus},
+    channels_models::{BroadcastIrcMessage, IrcChannel, IrcChannelOperationStatus},
     errors::InternalIrcError,
     types::{ChannelName, ClientId},
     user_state::UserState,
@@ -110,7 +110,7 @@ impl ServerState {
                 caracs.addr,
                 quit_reason
             );
-            let quit_channel_message = ChannelMessage::new(quit_msg);
+            let quit_channel_message = BroadcastIrcMessage::new(quit_msg);
 
             // 2. Identify all unique neighbors (people who share channels)
             let mut neighbors = HashSet::new();

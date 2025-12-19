@@ -1,7 +1,7 @@
 use crate::channels_models::SubscriptionControl;
 use crate::replies::IrcReply;
 use crate::types::{ChannelName, ClientId, Nickname, Realname, Username};
-use crate::{errors::InternalIrcError, message_models::IrcMessage};
+use crate::{errors::InternalIrcError, message_models::DirectIrcMessage};
 use core::net::SocketAddr;
 use dashmap::DashSet;
 use std::{
@@ -75,14 +75,14 @@ impl User {
 #[derive(Debug, Clone)]
 pub struct UserState {
     pub user: Arc<RwLock<User>>,
-    pub tx_outbound: Sender<IrcMessage>,
+    pub tx_outbound: Sender<DirectIrcMessage>,
     pub tx_control: Sender<SubscriptionControl>,
     pub tx_status: Sender<UserStatus>,
 }
 impl UserState {
     pub fn new(
         addr: SocketAddr,
-        tx_outbound: Sender<IrcMessage>,
+        tx_outbound: Sender<DirectIrcMessage>,
         tx_control: Sender<SubscriptionControl>,
         tx_status: Sender<UserStatus>,
     ) -> Self {

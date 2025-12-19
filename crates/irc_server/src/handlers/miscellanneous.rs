@@ -1,6 +1,6 @@
 use crate::{
     errors::InternalIrcError,
-    message_models::IrcMessage,
+    message_models::DirectIrcMessage,
     replies::IrcReply,
     types::{Host, Nickname},
     user_state::{UserState, UserStatus},
@@ -47,7 +47,7 @@ pub async fn handle_ping(
     let irc_reply = IrcReply::Pong {
         destination: &format!("{}", server[0]),
     };
-    let pong_message = IrcMessage::new(irc_reply.format());
+    let pong_message = DirectIrcMessage::new(irc_reply.format());
     let _ = user_state.tx_outbound.send(pong_message).await;
     Ok(UserStatus::Active)
 }
@@ -73,7 +73,7 @@ impl IrcUnknownCommand {
                     nick: &nick,
                     command: &parsed_command,
                 };
-                let unknown_command_message = IrcMessage::new(irc_reply.format());
+                let unknown_command_message = DirectIrcMessage::new(irc_reply.format());
                 let _ = user_state.tx_outbound.send(unknown_command_message).await;
                 if &nick != &Nickname("*".to_owned()) {
                     Ok(UserStatus::Handshaking)

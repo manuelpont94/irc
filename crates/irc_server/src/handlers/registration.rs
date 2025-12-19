@@ -1,6 +1,6 @@
 use crate::{
     errors::InternalIrcError,
-    message_models::IrcMessage,
+    message_models::DirectIrcMessage,
     replies::IrcReply,
     server_state::ServerState,
     types::{ClientId, Nickname, Realname, Username},
@@ -34,7 +34,7 @@ pub async fn handle_cap_ls_response(
         nick: &nick,
         capabilities: &get_capabilities(),
     };
-    let cap_list_message = IrcMessage::new(irc_reply.format());
+    let cap_list_message = DirectIrcMessage::new(irc_reply.format());
     let _ = user_state.tx_outbound.send(cap_list_message).await;
     // :server CAP * LS :chghost echo-message extended-join invite-notify
     // :server CAP * LS :message-tags multi-prefix sasl
@@ -65,7 +65,7 @@ pub async fn handle_cap_list_response(
         nick: &nick,
         capabilities: &get_capabilities(),
     };
-    let cap_list_message = IrcMessage::new(irc_reply.format());
+    let cap_list_message = DirectIrcMessage::new(irc_reply.format());
     let _ = user_state.tx_outbound.send(cap_list_message).await;
     // :server CAP * LS :chghost echo-message extended-join invite-notify
     // :server CAP * LS :message-tags multi-prefix sasl
@@ -136,7 +136,7 @@ pub async fn when_registered(
         let user = user_data.user.unwrap();
         let host = user_data.addr;
         server_state.add_connecting_user(user_state).await?;
-        let welcome_message = IrcMessage::new(
+        let welcome_message = DirectIrcMessage::new(
             IrcReply::Welcome {
                 nick: &nick,
                 user: &user,
@@ -158,7 +158,7 @@ pub async fn handle_mode_registration(
 ) -> Result<UserStatus, InternalIrcError> {
     match user_state.with_modes(&nick, modes).await {
         Ok(Some(status)) => {
-            let status_message = IrcMessage::new(status.format());
+            let status_message = DirectIrcMessage::new(status.format());
             let _ = user_state.tx_outbound.send(status_message);
         }
         Ok(_) => (),
