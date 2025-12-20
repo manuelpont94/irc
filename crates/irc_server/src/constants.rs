@@ -1,4 +1,7 @@
-pub const SERVER_NAME: &str = "192.168.1.34";
+use std::sync::OnceLock;
+
+pub static SERVER_NAME: OnceLock<String> = OnceLock::new();
+//pub const SERVER_NAME: &str = "192.168.1.34";
 
 // 001    RPL_WELCOME
 //               "Welcome to the Internet Relay Network

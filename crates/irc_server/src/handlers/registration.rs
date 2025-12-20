@@ -6,7 +6,7 @@ use crate::{
     replies::{IrcReply, MessageReply},
     server_state::ServerState,
     types::{ClientId, Nickname, Realname, Username},
-    user_state::{self, UserState, UserStatus},
+    user_state::{UserState, UserStatus},
 };
 
 pub const IRC_SERVER_CAP_MULTI_PREFIX: bool = false;

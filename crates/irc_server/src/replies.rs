@@ -120,94 +120,98 @@ pub enum IrcReply<'a> {
 
 impl<'a> IrcReply<'a> {
     pub fn format(&self) -> String {
+        let server_name = crate::constants::SERVER_NAME
+            .get()
+            .map(|s| s.as_str())
+            .unwrap_or("unknown.server");
         match self {
             // misceallanneous
             IrcReply::Pong { destination } => {
-                format!(":{SERVER_NAME} PONG {destination}")
+                format!(":{server_name} PONG {destination}")
             }
             // Capabilities
             IrcReply::CapList { nick, capabilities } => {
-                format!(":{SERVER_NAME} CAP {nick} LIST :{capabilities}")
+                format!(":{server_name} CAP {nick} LIST :{capabilities}")
             }
             IrcReply::CapLs { nick, capabilities } => {
-                format!(":{SERVER_NAME} CAP {nick} LS :{capabilities}")
+                format!(":{server_name} CAP {nick} LS :{capabilities}")
             }
             // registration replies & errors
             IrcReply::Welcome { nick, user, host } => format!(
-                ":{SERVER_NAME} {RPL_WELCOME_NB:03} {nick} :{RPL_WELCOME_STR} {nick}!{user}@{host}"
+                ":{server_name} {RPL_WELCOME_NB:03} {nick} :{RPL_WELCOME_STR} {nick}!{user}@{host}"
             ),
 
             IrcReply::UModeIs { nick, modes } => {
-                format!(":{SERVER_NAME} {RPL_UMODEIS_NB:03} {nick} :{modes}")
+                format!(":{server_name} {RPL_UMODEIS_NB:03} {nick} :{modes}")
             }
             IrcReply::ErrUModeUnknownFlag { nick } => format!(
-                ":{SERVER_NAME} {ERR_UMODEUNKNOWNFLAG_NB:03} {nick} :{ERR_UMODEUNKNOWNFLAG_STR}"
+                ":{server_name} {ERR_UMODEUNKNOWNFLAG_NB:03} {nick} :{ERR_UMODEUNKNOWNFLAG_STR}"
             ),
             IrcReply::ErrUsersDontMatch { nick } => format!(
-                ":{SERVER_NAME} {ERR_USERSDONTMATCH_NB:03} {nick} :{ERR_USERSDONTMATCH_STR}"
+                ":{server_name} {ERR_USERSDONTMATCH_NB:03} {nick} :{ERR_USERSDONTMATCH_STR}"
             ),
             IrcReply::ErrNotRegistered { nick } => {
-                format!(":{SERVER_NAME} {ERR_NOTREGISTERED_NB:03} {nick} :{ERR_NOTREGISTERED_STR}")
+                format!(":{server_name} {ERR_NOTREGISTERED_NB:03} {nick} :{ERR_NOTREGISTERED_STR}")
             }
             IrcReply::ErrUnknownCommand { nick, command } => format!(
-                ":{SERVER_NAME} {ERR_UNKNOWNCOMMAND_NB:03} {nick} {command} :{ERR_UNKNOWNCOMMAND_STR}"
+                ":{server_name} {ERR_UNKNOWNCOMMAND_NB:03} {nick} {command} :{ERR_UNKNOWNCOMMAND_STR}"
             ),
             //Channels replies & errors
             IrcReply::NoTopic { nick, channel } => {
-                format!(":{SERVER_NAME} {RPL_NOTOPIC_NB:03} {nick} {channel} :{RPL_NOTOPIC_STR}")
+                format!(":{server_name} {RPL_NOTOPIC_NB:03} {nick} {channel} :{RPL_NOTOPIC_STR}")
             }
             IrcReply::Topic {
                 nick,
                 channel,
                 topic,
-            } => format!(":{SERVER_NAME} {RPL_TOPIC_NB:03} {nick}  {channel} :{topic}"),
+            } => format!(":{server_name} {RPL_TOPIC_NB:03} {nick}  {channel} :{topic}"),
             IrcReply::Names {
                 nick,
                 channel,
                 visibility,
                 names,
             } => format!(
-                ":{SERVER_NAME} {RPL_NAMREPLY_NB:03} {nick} {visibility} {channel} :{names}"
+                ":{server_name} {RPL_NAMREPLY_NB:03} {nick} {visibility} {channel} :{names}"
             ),
             IrcReply::EndOfName { nick, channel } => {
                 format!(
-                    ":{SERVER_NAME} {RPL_ENDOFNAMES_NB:03} {nick} {channel} :{RPL_ENDOFNAMES_STR}"
+                    ":{server_name} {RPL_ENDOFNAMES_NB:03} {nick} {channel} :{RPL_ENDOFNAMES_STR}"
                 )
             }
             IrcReply::ErrBannedFromChan { channel } => format!(
-                ":{SERVER_NAME} {ERR_BANNEDFROMCHAN_NB:03} {channel} :{ERR_BANNEDFROMCHAN_STR}"
+                ":{server_name} {ERR_BANNEDFROMCHAN_NB:03} {channel} :{ERR_BANNEDFROMCHAN_STR}"
             ),
             IrcReply::ErrInviteOnlyChan { channel } => format!(
-                ":{SERVER_NAME} {ERR_INVITEONLYCHAN_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
+                ":{server_name} {ERR_INVITEONLYCHAN_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
             ),
             IrcReply::ErrBadChannelKey { channel } => format!(
-                ":{SERVER_NAME} {ERR_BADCHANNELKEY_NB:03} {channel} :{ERR_BADCHANNELKEY_STR}"
+                ":{server_name} {ERR_BADCHANNELKEY_NB:03} {channel} :{ERR_BADCHANNELKEY_STR}"
             ),
             IrcReply::ErrChannelIsFull { channel } => {
                 format!(
-                    ":{SERVER_NAME} {ERR_CHANNELISFULL_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
+                    ":{server_name} {ERR_CHANNELISFULL_NB:03} {channel} :{ERR_INVITEONLYCHAN_STR}"
                 )
             }
             IrcReply::ErrNoSuchChannel { nick, channel } => {
                 format!(
-                    ":{SERVER_NAME} {ERR_NOSUCHCHANNEL_NB:03} {nick} {channel} :{ERR_NOSUCHCHANNEL_STR}"
+                    ":{server_name} {ERR_NOSUCHCHANNEL_NB:03} {nick} {channel} :{ERR_NOSUCHCHANNEL_STR}"
                 )
             }
             IrcReply::ErrNotOnChannel { nick, channel } => {
                 format!(
-                    ":{SERVER_NAME} {ERR_NOTONCHANNEL_NB:03} {nick} {channel} :{ERR_NOTONCHANNEL_STR}"
+                    ":{server_name} {ERR_NOTONCHANNEL_NB:03} {nick} {channel} :{ERR_NOTONCHANNEL_STR}"
                 )
             }
 
             // Generic
             IrcReply::ErrNeedMoreParams { nick, command } => {
                 format!(
-                    ":{SERVER_NAME} {ERR_NEEDMOREPARAMS_NB:03} {nick } {command} :{ERR_NEEDMOREPARAMS_STR}"
+                    ":{server_name} {ERR_NEEDMOREPARAMS_NB:03} {nick } {command} :{ERR_NEEDMOREPARAMS_STR}"
                 )
             }
             // Registration
             IrcReply::ErrNicknameInUse { nick } => {
-                format!(":{SERVER_NAME} {ERR_NICKNAMEINUSE_NB:03} {nick } :{ERR_NICKNAMEINUSE_STR}")
+                format!(":{server_name} {ERR_NICKNAMEINUSE_NB:03} {nick } :{ERR_NICKNAMEINUSE_STR}")
             }
 
             _ => todo!("Implement remaining reply variants"),

@@ -2,14 +2,13 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, tag_no_case},
-    multi::separated_list1,
     sequence::preceded,
 };
 
 use crate::{
     errors::InternalIrcError,
     handlers::messages::handle_privmsg,
-    ops::parsers::{msgtarget_parser, targetmask_parser, trailing_parser},
+    ops::parsers::{msgtarget_parser, trailing_parser},
     server_state::ServerState,
     types::{ClientId, MessageTo},
     user_state::{UserState, UserStatus},

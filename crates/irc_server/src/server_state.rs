@@ -7,22 +7,25 @@ use crate::{
 };
 use dashmap::DashMap;
 use log::{debug, info};
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
     pub channels: Arc<DashMap<ChannelName, Arc<IrcChannel>>>,
-    pub users: Arc<DashMap<ClientId, UserState>>,
+    pub ip_counts: Arc<DashMap<IpAddr, usize>>,
     pub nick: Arc<DashMap<Nickname, ClientId>>,
-    pub nick_user_host_server: Arc<DashMap<(String, String, String, String), ClientId>>,
+    // pub nick_user_host_server: Arc<DashMap<(String, String, String, String), ClientId>>,
+    pub users: Arc<DashMap<ClientId, UserState>>,
 }
+
 impl ServerState {
     pub fn new() -> Self {
         ServerState {
             channels: Arc::new(DashMap::new()),
-            users: Arc::new(DashMap::new()),
+            ip_counts: Arc::new(DashMap::new()),
             nick: Arc::new(DashMap::new()),
-            nick_user_host_server: Arc::new(DashMap::new()),
+            // nick_user_host_server: Arc::new(DashMap::new()),
+            users: Arc::new(DashMap::new()),
         }
     }
 
