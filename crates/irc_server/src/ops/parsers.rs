@@ -1,16 +1,18 @@
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
 use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::{tag, take_while, take_while_m_n, take_while1},
     character::complete::{char, satisfy},
-    combinator::{opt, recognize, verify},
+    combinator::{map_res, opt, recognize, verify},
+    error::{Error, ErrorKind},
     multi::{count, many0, many1, separated_list1},
     sequence::{pair, preceded},
 };
 
 use crate::types::{
-    ChannelName, Host, Hostname, Ip4Addr, Ip6Addr, IpAddr, MessageTo, Nickname, Target, TargetMask,
-    Username,
+    ChannelName, Host, Hostname, MessageTo, Nickname, Target, TargetMask, Username,
 };
 
 // 2.3.1 Message format in Augmented BNF
@@ -279,62 +281,81 @@ pub fn shortname_parser(input: &str) -> IResult<&str, &str> {
 // hostaddr = ip4addr / ip6addr
 pub fn hostaddr_parser(input: &str) -> IResult<&str, IpAddr> {
     let mut parser = alt((
-        ip4addr_parser.map(|ip| IpAddr::Ip4Addr(ip)),
-        ip6addr_parser.map(|ip| IpAddr::Ip6Addr(ip)),
+        ip4addr_parser.map(|ip| IpAddr::from(ip)),
+        ip6addr_parser.map(|ip| IpAddr::from(ip)),
     ));
     parser.parse(input)
 }
 
 // 09.  ip4addr    =  1*3digit "." 1*3digit "." 1*3digit "." 1*3digit
 // ip4addr = 1*3digit "." 1*3digit "." 1*3digit "." 1*3digit
-fn ip4_octet_parser(input: &str) -> IResult<&str, &str> {
-    take_while_m_n(1, 3, |c: char| c.is_ascii_digit())(input)
+fn ip4_octet_parser(input: &str) -> IResult<&str, u8> {
+    let (rem, res) = take_while_m_n(1, 3, |c: char| c.is_ascii_digit()).parse(input)?;
+    match res.parse::<u8>() {
+        Ok(add) => Ok((rem, add)),
+        Err(_e) => Err(nom::Err::Error(Error::new(input, ErrorKind::MapRes))),
+    }
 }
 
-fn ip4addr_parser(input: &str) -> IResult<&str, Ip4Addr> {
-    let mut parser = recognize((
+fn ip4addr_parser(input: &str) -> IResult<&str, Ipv4Addr> {
+    let (rem, (o1, o2, o3, o4)) = (
         ip4_octet_parser,
-        tag("."),
-        ip4_octet_parser,
-        tag("."),
-        ip4_octet_parser,
-        tag("."),
-        ip4_octet_parser,
-    ));
-    let (rem, ip) = parser.parse(input)?;
-    Ok((rem, Ip4Addr(ip.to_owned())))
+        preceded(tag("."), ip4_octet_parser),
+        preceded(tag("."), ip4_octet_parser),
+        preceded(tag("."), ip4_octet_parser),
+    )
+        .parse(input)?;
+
+    Ok((rem, Ipv4Addr::new(o1, o2, o3, o4)))
 }
 
 // 10.  ip6addr    =  1*hexdigit 7( ":" 1*hexdigit )
 //      ip6addr    =/ "0:0:0:0:0:" ( "0" / "FFFF" ) ":" ip4addr
 // ip6addr = 1*hexdigit 7( ":" 1*hexdigit )
-fn ip6_block_parser(input: &str) -> IResult<&str, &str> {
-    hexdigit(input) // already allows 1+
+fn ip6_block_parser(input: &str) -> IResult<&str, u16> {
+    map_res(
+        nom::bytes::complete::take_while_m_n(1, 4, |c: char| c.is_ascii_hexdigit()),
+        |s| u16::from_str_radix(s, 16),
+    )
+    .parse(input)
 }
 
-fn ip6addr_normal_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize((
-        ip6_block_parser,
-        count(preceded(tag(":"), ip6_block_parser), 7),
-    ));
-    parser.parse(input)
+fn ip6addr_normal_parser(input: &str) -> IResult<&str, Ipv6Addr> {
+    let (input, first_block) = ip6_block_parser(input)?;
+    let (input, mut blocks) = count(preceded(tag(":"), ip6_block_parser), 7).parse(input)?;
+    blocks.insert(0, first_block);
+
+    let addr = Ipv6Addr::new(
+        blocks[0], blocks[1], blocks[2], blocks[3], blocks[4], blocks[5], blocks[6], blocks[7],
+    );
+
+    Ok((input, addr))
 }
 
 // ip6addr =/ "0:0:0:0:0:" ( "0" / "FFFF" ) ":" ip4addr
-fn ip6addr_ipv4_compat_parser(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize((
+fn ip6addr_ipv4_compat_parser(input: &str) -> IResult<&str, Ipv6Addr> {
+    // 1. Match the prefix, the toggle (0 or FFFF), and the colon separator
+    let (rem, (_, toggle, _, ip4)) = (
         tag("0:0:0:0:0:"),
         alt((tag("0"), tag("FFFF"))),
         tag(":"),
         ip4addr_parser,
-    ));
-    parser.parse(input)
-}
+    )
+        .parse(input)?;
 
-fn ip6addr_parser(input: &str) -> IResult<&str, Ip6Addr> {
+    let fifth_segment = if toggle == "FFFF" { 0xFFFF } else { 0x0000 };
+    let octets = ip4.octets();
+    let seg7 = ((octets[0] as u16) << 8) | (octets[1] as u16);
+    let seg8 = ((octets[2] as u16) << 8) | (octets[3] as u16);
+
+    let ipv6 = Ipv6Addr::new(0, 0, 0, 0, 0, fifth_segment, seg7, seg8);
+
+    Ok((rem, ipv6))
+}
+fn ip6addr_parser(input: &str) -> IResult<&str, Ipv6Addr> {
     let mut parser = alt((ip6addr_ipv4_compat_parser, ip6addr_normal_parser));
     let (rem, ip) = parser.parse(input)?;
-    Ok((rem, Ip6Addr(ip.to_owned())))
+    Ok((rem, ip))
 }
 
 // 11.  nickname   =  ( letter / special ) *8( letter / digit / special / "-" )

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, net::IpAddr};
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq, Copy)]
 pub struct ClientId(pub usize);
@@ -88,35 +88,6 @@ impl Display for Host {
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct Hostname(pub String);
 impl Display for Hostname {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub enum IpAddr {
-    Ip4Addr(Ip4Addr),
-    Ip6Addr(Ip6Addr),
-}
-impl Display for IpAddr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IpAddr::Ip4Addr(ip) => write!(f, "{ip}"),
-            IpAddr::Ip6Addr(ip) => write!(f, "{ip}"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub struct Ip6Addr(pub String);
-impl Display for Ip6Addr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-#[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub struct Ip4Addr(pub String);
-impl Display for Ip4Addr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
