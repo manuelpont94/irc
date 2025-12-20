@@ -13,10 +13,12 @@ name = "irc_client_tests"
 path = "src/bin/irc_client_tests.rs"
 
 [dependencies]
-anyhow = "1.0.100"
-dashmap = "5"
-flexi_logger = "0.31.7"
-log = "0.4.28"
+clap = { workspace = true }
+dashmap = { workspace = true }
+flexi_logger = { workspace = true }
+log = { workspace = true }
 nom = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
