@@ -1,7 +1,0 @@
-5. Summary Table of Implementation Priority
-Priority	Command	Purpose
-P-1 (à faire) refactoring
-P0 (Critical)	NICK, USER, PONG, QUIT	To get a user connected and online.
-P1 (Core)	JOIN, PART, PRIVMSG	To allow basic chatting in groups.
-P2 (Usability)	TOPIC, NAMES, LIST, WHOIS	To make the server navigable and informative.
-P3 (Admin)	MODE, KICK, NOTICE	To allow channel management and moderation.

@@ -1,2 +1,0 @@
-    Checking irc_server v1.0.0 (/home/manu/Documents/rust_wksp/irc/crates/irc_server)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.43s
