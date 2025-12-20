@@ -1,4 +1,5 @@
 pub mod channels_models;
+pub mod config;
 pub mod constants;
 pub mod errors;
 pub mod handlers;

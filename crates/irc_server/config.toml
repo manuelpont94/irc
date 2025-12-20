@@ -1,0 +1,19 @@
+[server]
+name = "irc.rust-server.io"
+version = "0.1.0"
+motd = "Welcome to a basic Rust IRC server!"
+
+[network]
+bind_address = "127.0.0.1"
+port = 6667
+max_connections = 10000
+
+[limits]
+max_channels_per_user = 10
+# max_channel_name_length = 32
+# max_topic_length = 307
+max_message_length = 512
+
+# --- Security & Anti-Flood ---
+max_connections_per_ip = 5       # Prevent single-IP flooding
+unregistered_timeout = 20        # Seconds to register before kick
